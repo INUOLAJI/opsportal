@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import { useAuth } from '../context/AuthContext';
-import { documentsService } from '../services/api';
+import { documentsService, usersService } from '../services/api';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 // Mirrors DocumentSerializer.validate_file in the backend, so bad uploads
@@ -113,6 +113,8 @@ function mapDocument(d) {
     avatarBg: colorForString(d.uploaded_by_name || d.uploaded_by),
     fileUrl: d.file || null,
     uploadedById: d.uploaded_by,
+    assignedToId: d.assigned_to,
+    assignedToInitials: d.assigned_to_initials || null,
   };
 }
 
@@ -130,6 +132,10 @@ function DocsPage() {
   const [categoryFilter, setCategoryFilter] = useState('All');
 
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const isAdmin = user?.role === 'admin';
+  const [teamUsers, setTeamUsers] = useState([]);
+  const [teamUsersLoading, setTeamUsersLoading] = useState(false);
+  const [uploadAssignee, setUploadAssignee] = useState('');
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploadCategory, setUploadCategory] = useState('');
   const [uploadFileObj, setUploadFileObj] = useState(null);
@@ -173,6 +179,26 @@ function DocsPage() {
     loadDocuments();
   }, [loadDocuments]);
 
+  const loadTeamUsers = useCallback(async () => {
+    setTeamUsersLoading(true);
+    try {
+      const data = await usersService.getAll();
+      const list = Array.isArray(data) ? data : (data?.results || []);
+      setTeamUsers(list);
+    } catch (err) {
+      setTeamUsers([]);
+    } finally {
+      setTeamUsersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAdmin && showUploadModal && teamUsers.length === 0 && !teamUsersLoading) {
+      loadTeamUsers();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, showUploadModal]);
+
   // Real categories + counts, derived from the actual documents we have —
   // not hardcoded, so this stays accurate as documents are added or removed.
   const documentCategories = React.useMemo(() => {
@@ -207,6 +233,7 @@ function DocsPage() {
     setUploadTitle('');
     setUploadCategory('');
     setUploadFileObj(null);
+    setUploadAssignee('');
     setUploadError(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -225,6 +252,7 @@ function DocsPage() {
       formData.append('title', uploadTitle.trim());
       formData.append('category', uploadCategory.trim());
       formData.append('file', uploadFileObj);
+      if (isAdmin && uploadAssignee) formData.append('assigned_to', uploadAssignee);
       const created = await documentsService.create(formData);
       setDocuments(prev => [mapDocument(created), ...prev]);
       resetUploadForm();
@@ -497,6 +525,14 @@ function DocsPage() {
                             <span style={{ color: '#3B82F6', fontWeight: 500 }}>
                               {doc.category}
                             </span>
+                            {doc.assignedToInitials && (
+                              <span
+                                className="badge px-2 py-1 fw-semibold"
+                                style={{ fontSize: '10px', backgroundColor: 'rgba(139, 92, 246, 0.12)', color: '#8B5CF6' }}
+                              >
+                                Assigned to {doc.assignedToInitials}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -623,6 +659,32 @@ function DocsPage() {
                   {documentCategories.map(c => <option key={c.name} value={c.name} />)}
                 </datalist>
               </div>
+              {isAdmin && (
+                <div className="mb-3">
+                  <label className="form-label small fw-semibold" style={{ color: textSecondary }}>
+                    Assign to (optional)
+                  </label>
+                  <select
+                    value={uploadAssignee}
+                    onChange={(e) => setUploadAssignee(e.target.value)}
+                    className="form-select"
+                    disabled={uploading || teamUsersLoading}
+                    style={{ backgroundColor: darkMode ? '#334155' : '#F8FAFC', color: textPrimary, border: `1px solid ${borderColor}` }}
+                  >
+                    <option value="">
+                      {teamUsersLoading ? 'Loading team...' : 'No one — just visible to me'}
+                    </option>
+                    {teamUsers.map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.full_name || u.email} {u.role ? `(${u.role})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="small mt-1 mb-0" style={{ color: textSecondary, fontSize: '11px' }}>
+                    Shares this document into that team member's Documents list.
+                  </p>
+                </div>
+              )}
               <div className="mb-4">
                 <label className="form-label small fw-semibold" style={{ color: textSecondary }}>File</label>
                 <div

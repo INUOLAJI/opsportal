@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, FileText, Users, BarChart3, Settings, 
-  LogOut, X, Moon, Sun 
+  LogOut, X, Moon, Sun, ListTodo 
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -35,10 +35,11 @@ export default function Sidebar({
 
   const menuItems = [
     { id: 1, label: 'Dashboard', path: '/dashboard', icon: <LayoutDashboard size={20} /> },
-    { id: 2, label: 'Documents', path: '/documents', icon: <FileText size={20} /> },
-    { id: 3, label: 'Team', path: '/team', icon: <Users size={20} /> },
-    { id: 4, label: 'Analytics', path: '/analytics', icon: <BarChart3 size={20} /> },
-    { id: 5, label: 'Settings', path: '/settings', icon: <Settings size={20} /> },
+    { id: 2, label: 'Task', path: '/task', icon: <ListTodo size={20} /> },
+    { id: 3, label: 'Documents', path: '/documents', icon: <FileText size={20} /> },
+    { id: 4, label: 'Team', path: '/team', icon: <Users size={20} /> },
+    { id: 5, label: 'Analytics', path: '/analytics', icon: <BarChart3 size={20} /> },
+    { id: 6, label: 'Settings', path: '/settings', icon: <Settings size={20} /> },
   ];
 
   return (

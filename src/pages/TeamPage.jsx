@@ -1,60 +1,95 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Mail, Phone, Shield, Plus, Search, MoreVertical, Filter, 
-  Menu, Bell, Moon, Sun 
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  Mail, Calendar, Shield, Plus, Search, Filter,
+  Menu, Bell, Moon, Sun, X, Loader2, Check
 } from 'lucide-react';
-import Sidebar from '../components/Sidebar'; 
+import Sidebar from '../components/Sidebar';
 import { useAuth } from '../context/AuthContext';
-import { usersService } from '../services/api';
+import { usersService, authService } from '../services/api';
 import 'bootstrap/dist/css/bootstrap.min.css';
+
+const ROLE_OPTIONS = ['All', 'Admin', 'Staff'];
+
+function formatJoinedDate(dateString) {
+  if (!dateString) return '';
+  const d = new Date(dateString);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function mapMember(u) {
+  const roleLabel = u.role === 'admin' ? 'Operations Admin' : 'Staff Member';
+  return {
+    id: u.id,
+    name: u.full_name || u.email,
+    email: u.email,
+    role: u.role,
+    roleLabel,
+    initials: u.full_name
+      ? u.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+      : (u.email ? u.email[0].toUpperCase() : '?'),
+    color: u.role === 'admin' ? '#8B5CF6' : '#3B82F6',
+    isActive: u.is_active !== false, // default true unless explicitly false
+    joined: formatJoinedDate(u.date_joined),
+  };
+}
 
 function TeamPage() {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
-  const [teamMembers, setTeamMembers] = useState([]);
 
-  const userInitials = user?.full_name 
-    ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) 
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [roleFilter, setRoleFilter] = useState('All');
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const filterRef = useRef(null);
+
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteName, setInviteName] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [invitePassword, setInvitePassword] = useState('');
+  const [inviteRole, setInviteRole] = useState('staff');
+  const [inviting, setInviting] = useState(false);
+  const [inviteError, setInviteError] = useState(null);
+
+  const userInitials = user?.full_name
+    ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
     : (user?.email ? user.email[0].toUpperCase() : 'U');
 
   const userName = user?.full_name || user?.email || 'User';
-  const userRole = user?.role === 'admin' ? 'Operations Admin' : 'Staff Member';
+  const userRole = isAdmin ? 'Operations Admin' : 'Staff Member';
+
+  const loadTeam = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await usersService.getAll();
+      const list = Array.isArray(data) ? data : (data?.results || []);
+      setTeamMembers(list.map(mapMember));
+    } catch (err) {
+      setLoadError('Could not load the team directory. Check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function fetchTeam() {
-      try {
-        const users = await usersService.getAll();
-        if (Array.isArray(users) && users.length > 0) {
-          setTeamMembers(users.map(u => ({
-            id: u.id,
-            name: u.full_name,
-            role: u.role === 'admin' ? 'Operations Admin' : 'Staff Member',
-            email: u.email,
-            phone: '+1 (555) 019-2834',
-            initials: u.full_name ? u.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : u.email[0].toUpperCase(),
-            color: u.role === 'admin' ? '#8B5CF6' : '#3B82F6',
-            status: 'Active'
-          })));
-        } else {
-          setTeamMembers([
-            { id: 1, name: 'John Doe', role: 'Operations Admin', email: 'john.doe@opsportal.com', phone: '+1 (555) 019-2834', initials: 'JD', color: '#8B5CF6', status: 'Active' },
-            { id: 2, name: 'Marcus Chang', role: 'DevOps Lead', email: 'm.chang@opsportal.com', phone: '+1 (555) 014-4921', initials: 'MC', color: '#10B981', status: 'Active' },
-            { id: 3, name: 'Sarah Jenkins', role: 'Security Engineer', email: 's.jenkins@opsportal.com', phone: '+1 (555) 017-8832', initials: 'SJ', color: '#EC4899', status: 'On Break' },
-            { id: 4, name: 'Brandon Bell', role: 'UI/UX Designer', email: 'b.bell@opsportal.com', phone: '+1 (555) 012-3341', initials: 'BB', color: '#3B82F6', status: 'Active' },
-          ]);
-        }
-      } catch (err) {
-        setTeamMembers([
-          { id: 1, name: 'John Doe', role: 'Operations Admin', email: 'john.doe@opsportal.com', phone: '+1 (555) 019-2834', initials: 'JD', color: '#8B5CF6', status: 'Active' },
-          { id: 2, name: 'Marcus Chang', role: 'DevOps Lead', email: 'm.chang@opsportal.com', phone: '+1 (555) 014-4921', initials: 'MC', color: '#10B981', status: 'Active' },
-        ]);
-      }
+    loadTeam();
+  }, [loadTeam]);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (filterRef.current && !filterRef.current.contains(e.target)) setShowFilterMenu(false);
     }
-    fetchTeam();
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const handleToggleSidebar = () => {
@@ -62,6 +97,35 @@ function TeamPage() {
       setMobileOpen(!mobileOpen);
     } else {
       setDesktopCollapsed(!desktopCollapsed);
+    }
+  };
+
+  const resetInviteForm = () => {
+    setInviteName('');
+    setInviteEmail('');
+    setInvitePassword('');
+    setInviteRole('staff');
+    setInviteError(null);
+  };
+
+  const handleInvite = async (e) => {
+    e.preventDefault();
+    if (!inviteName.trim() || !inviteEmail.trim() || invitePassword.length < 8) {
+      setInviteError('Please fill in a name, email, and a password of at least 8 characters.');
+      return;
+    }
+    setInviting(true);
+    setInviteError(null);
+    try {
+      await authService.signUp(inviteName.trim(), inviteEmail.trim(), invitePassword, inviteRole);
+      await loadTeam(); // refetch for canonical data (id, date_joined, etc.)
+      resetInviteForm();
+      setShowInviteModal(false);
+    } catch (err) {
+      const message = err.response?.data?.email?.[0] || err.message || 'Could not create the account. Please try again.';
+      setInviteError(message);
+    } finally {
+      setInviting(false);
     }
   };
 
@@ -73,104 +137,35 @@ function TeamPage() {
   const borderColor = darkMode ? '#334155' : '#E2E8F0';
   const hoverBg = darkMode ? '#334155' : '#F8FAFC';
 
-  // Team data
-  const teamData = [
-    { 
-      id: 1, 
-      name: 'John Doe', 
-      role: 'Operations Admin', 
-      email: 'john.doe@opsportal.com', 
-      phone: '+1 (555) 019-2834', 
-      initials: 'JD', 
-      color: '#8B5CF6', 
-      status: 'Active' 
-    },
-    { 
-      id: 2, 
-      name: 'Marcus Chang', 
-      role: 'DevOps Lead', 
-      email: 'm.chang@opsportal.com', 
-      phone: '+1 (555) 014-4921', 
-      initials: 'MC', 
-      color: '#10B981', 
-      status: 'Active' 
-    },
-    { 
-      id: 3, 
-      name: 'Sarah Jenkins', 
-      role: 'Security Engineer', 
-      email: 's.jenkins@opsportal.com', 
-      phone: '+1 (555) 017-8832', 
-      initials: 'SJ', 
-      color: '#EC4899', 
-      status: 'On Break' 
-    },
-    { 
-      id: 4, 
-      name: 'Brandon Bell', 
-      role: 'UI/UX Designer', 
-      email: 'b.bell@opsportal.com', 
-      phone: '+1 (555) 012-3341', 
-      initials: 'BB', 
-      color: '#3B82F6', 
-      status: 'Active' 
-    },
-    { 
-      id: 5, 
-      name: 'Elena Rostova', 
-      role: 'Backend Engineer', 
-      email: 'e.rostova@opsportal.com', 
-      phone: '+1 (555) 015-9902', 
-      initials: 'ER', 
-      color: '#06B6D4', 
-      status: 'Remote' 
-    },
-    { 
-      id: 6, 
-      name: 'David Kim', 
-      role: 'QA & Automation', 
-      email: 'd.kim@opsportal.com', 
-      phone: '+1 (555) 011-7726', 
-      initials: 'DK', 
-      color: '#F59E0B', 
-      status: 'Offline' 
-    },
-  ];
+  const filteredTeam = teamMembers.filter(member => {
+    const matchesRole =
+      roleFilter === 'All' ||
+      (roleFilter === 'Admin' && member.role === 'admin') ||
+      (roleFilter === 'Staff' && member.role === 'staff');
+    const matchesSearch =
+      member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      member.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      member.roleLabel.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesRole && matchesSearch;
+  });
 
-  // Filter team members
-  const filteredTeam = teamData.filter(member => 
-    member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    member.role.toLowerCase().includes(searchQuery.toLowerCase())
+  const getStatusBadge = (isActive) => (
+    <span
+      className="badge px-2 py-1 fw-semibold text-nowrap"
+      style={{
+        fontSize: '11px',
+        backgroundColor: isActive ? 'rgba(16, 185, 129, 0.1)' : hoverBg,
+        color: isActive ? '#10B981' : textSecondary
+      }}
+    >
+      {isActive ? 'Active' : 'Inactive'}
+    </span>
   );
 
-  // Status badge component
-  const getStatusBadge = (status) => {
-    const statusConfig = {
-      'Active': { color: '#10B981', bg: 'rgba(16, 185, 129, 0.1)' },
-      'On Break': { color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.1)' },
-      'Remote': { color: '#06B6D4', bg: 'rgba(6, 182, 212, 0.1)' },
-      'Offline': { color: textSecondary, bg: hoverBg }
-    };
-    const config = statusConfig[status] || statusConfig['Offline'];
-    
-    return (
-      <span 
-        className="badge px-2 py-1 fw-semibold text-nowrap"
-        style={{ 
-          fontSize: '11px',
-          backgroundColor: config.bg,
-          color: config.color
-        }}
-      >
-        {status}
-      </span>
-    );
-  };
-
   return (
-    <div 
+    <div
       className="d-flex min-vh-100"
-      style={{ 
+      style={{
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         backgroundColor: bgColor,
         color: textPrimary,
@@ -178,29 +173,29 @@ function TeamPage() {
         overflowX: 'hidden'
       }}
     >
-      
+
       {/* SIDEBAR */}
-      <Sidebar 
-        mobileOpen={mobileOpen} 
-        setMobileOpen={setMobileOpen} 
-        desktopCollapsed={desktopCollapsed} 
+      <Sidebar
+        mobileOpen={mobileOpen}
+        setMobileOpen={setMobileOpen}
+        desktopCollapsed={desktopCollapsed}
         onToggleSidebar={handleToggleSidebar}
         darkMode={darkMode}
         onDarkModeChange={setDarkMode}
       />
 
       {/* MAIN CONTENT WRAPPER */}
-      <div 
+      <div
         className="flex-grow-1 d-flex flex-column min-w-0"
         id="main-content-wrapper"
         style={{ transition: 'margin-left 0.2s ease-in-out' }}
       >
 
         {/* TOP NAVBAR */}
-        <header 
-          className="navbar navbar-expand fixed-top px-3 px-md-4" 
+        <header
+          className="navbar navbar-expand fixed-top px-3 px-md-4"
           id="global-header"
-          style={{ 
+          style={{
             height: '64px',
             zIndex: 1030,
             transition: 'all 0.2s ease-in-out',
@@ -210,40 +205,33 @@ function TeamPage() {
           }}
         >
           <div className="container-fluid d-flex justify-content-between align-items-center p-0">
-            
+
             {/* Left Nav Controls */}
             <div className="d-flex align-items-center gap-2 gap-md-3">
-              <button 
-                onClick={handleToggleSidebar} 
+              <button
+                onClick={handleToggleSidebar}
                 className="btn btn-link p-1 text-decoration-none shadow-none border-0"
-                style={{ 
-                  color: textPrimary,
-                  transition: 'all 0.15s ease'
-                }}
+                style={{ color: textPrimary, transition: 'all 0.15s ease' }}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = darkMode ? '#334155' : '#F1F5F9'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
               >
                 <Menu size={20} />
               </button>
-              
-              {/* Quick Global Search Input */}
+
               <div className="position-relative d-none d-md-block">
-                <Search 
-                  className="position-absolute" 
-                  size={16} 
-                  style={{ 
-                    left: '12px', 
-                    top: '10px',
-                    color: textSecondary,
-                    transition: 'color 0.15s ease'
-                  }} 
+                <Search
+                  className="position-absolute"
+                  size={16}
+                  style={{ left: '12px', top: '10px', color: textSecondary, transition: 'color 0.15s ease' }}
                 />
-                <input 
-                  type="text" 
-                  placeholder="Search team globally..." 
+                <input
+                  type="text"
+                  placeholder="Search team globally..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="form-control form-control-sm border-0 ps-5 rounded-3"
-                  style={{ 
-                    width: '240px', 
+                  style={{
+                    width: '240px',
                     height: '36px',
                     backgroundColor: darkMode ? '#334155' : '#F1F5F9',
                     color: textPrimary,
@@ -259,16 +247,10 @@ function TeamPage() {
 
             {/* Right Nav Profiling & Controls */}
             <div className="d-flex align-items-center gap-2 gap-sm-3">
-              
-              {/* Dark Mode Toggle */}
-              <button 
+              <button
                 onClick={() => setDarkMode(!darkMode)}
                 className="btn p-2 rounded-circle border-0"
-                style={{ 
-                  transition: 'all 0.15s ease',
-                  backgroundColor: darkMode ? '#334155' : '#F1F5F9',
-                  color: textPrimary
-                }}
+                style={{ transition: 'all 0.15s ease', backgroundColor: darkMode ? '#334155' : '#F1F5F9', color: textPrimary }}
                 aria-label="Toggle dark mode"
                 onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
                 onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
@@ -276,14 +258,9 @@ function TeamPage() {
                 {darkMode ? <Sun size={18} /> : <Moon size={18} />}
               </button>
 
-              {/* Notifications Bell */}
-              <button 
+              <button
                 className="btn position-relative p-2 rounded-circle border-0"
-                style={{ 
-                  transition: 'all 0.15s ease',
-                  backgroundColor: 'transparent',
-                  color: textSecondary
-                }}
+                style={{ transition: 'all 0.15s ease', backgroundColor: 'transparent', color: textSecondary }}
                 aria-label="View notifications"
                 onMouseEnter={(e) => {
                   e.currentTarget.style.backgroundColor = darkMode ? '#334155' : '#F1F5F9';
@@ -295,44 +272,20 @@ function TeamPage() {
                 }}
               >
                 <Bell size={18} />
-                <span 
-                  className="position-absolute rounded-circle" 
-                  style={{ 
-                    top: '6px', 
-                    right: '6px',
-                    width: '8px',
-                    height: '8px',
-                    backgroundColor: '#EF4444',
-                    boxShadow: '0 0 0 2px ' + cardBg,
-                    animation: 'pulse 2s infinite'
-                  }}
-                ></span>
               </button>
-              
-              <div 
-                className="vr opacity-25 my-auto" 
-                style={{ 
-                  height: '24px',
-                  backgroundColor: borderColor
-                }}
-              ></div>
-              
-              {/* User Profile */}
+
+              <div className="vr opacity-25 my-auto" style={{ height: '24px', backgroundColor: borderColor }}></div>
+
               <div className="d-flex align-items-center gap-2 ps-1" style={{ cursor: 'pointer', transition: 'opacity 0.15s ease' }}
                 onMouseEnter={(e) => e.currentTarget.style.opacity = '0.85'}
                 onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
               >
-                <div 
-                  className="rounded-circle text-white d-flex align-items-center justify-content-center flex-shrink-0" 
-                  style={{ 
-                    width: '36px', 
-                    height: '36px', 
-                    backgroundColor: '#8B5CF6',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    letterSpacing: '0.02em',
-                    boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)',
-                    transition: 'all 0.15s ease'
+                <div
+                  className="rounded-circle text-white d-flex align-items-center justify-content-center flex-shrink-0"
+                  style={{
+                    width: '36px', height: '36px', backgroundColor: '#8B5CF6',
+                    fontSize: '13px', fontWeight: 600, letterSpacing: '0.02em',
+                    boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)', transition: 'all 0.15s ease'
                   }}
                 >
                   {userInitials}
@@ -351,7 +304,7 @@ function TeamPage() {
 
         {/* MAIN CONTAINER */}
         <main className="p-3 p-md-4 flex-grow-1" style={{ paddingTop: 'calc(64px + 1.5rem)' }}>
-          
+
           {/* PAGE HEADER */}
           <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start gap-3 mb-4 mt-5">
             <div>
@@ -363,210 +316,253 @@ function TeamPage() {
               </p>
             </div>
             <div className="d-flex gap-2 w-100 w-sm-auto justify-content-sm-end">
-              <button 
-                className="btn btn-sm border d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0"
-                style={{ 
-                  backgroundColor: cardBg,
-                  color: textPrimary,
-                  borderColor: borderColor,
-                  transition: 'all 0.15s ease'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = hoverBg;
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = cardBg;
-                  e.currentTarget.style.transform = 'translateY(0)';
-                }}
-              >
-                <Filter size={14} />
-                Filter
-              </button>
-              <button 
-                className="btn btn-sm text-white d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0"
-                style={{ 
-                  backgroundColor: '#3B82F6',
-                  transition: 'all 0.15s ease'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#2563EB';
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.3)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#3B82F6';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
-              >
-                <Plus size={14} />
-                Invite Member
-              </button>
-            </div>
-          </div>
-
-          {/* SEARCH BAR */}
-          <div 
-            className="card border-0 mb-4"
-            style={{ 
-              backgroundColor: cardBg,
-              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
-            }}
-          >
-            <div className="card-body p-3 p-md-4">
-              <div className="position-relative">
-                <Search 
-                  className="position-absolute" 
-                  size={18} 
-                  style={{ 
-                    left: '16px', 
-                    top: '12px',
-                    color: textSecondary,
-                    transition: 'color 0.15s ease'
-                  }} 
-                />
-                <input 
-                  type="text" 
-                  placeholder="Search by name, role, or specialty..." 
-                  className="form-control border-0 ps-5 py-2 shadow-none"
-                  style={{ 
-                    backgroundColor: hoverBg,
+              <div className="position-relative" ref={filterRef}>
+                <button
+                  onClick={() => setShowFilterMenu(prev => !prev)}
+                  className="btn btn-sm border d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0"
+                  style={{
+                    backgroundColor: showFilterMenu ? hoverBg : cardBg,
                     color: textPrimary,
-                    fontSize: '14px',
+                    borderColor: borderColor,
                     transition: 'all 0.15s ease'
                   }}
+                >
+                  <Filter size={14} />
+                  {roleFilter === 'All' ? 'Filter' : roleFilter}
+                </button>
+                {showFilterMenu && (
+                  <div
+                    className="position-absolute rounded-3 overflow-hidden"
+                    style={{
+                      top: '42px', right: 0, width: '150px', backgroundColor: cardBg,
+                      border: `1px solid ${borderColor}`, boxShadow: '0 10px 25px rgba(0,0,0,0.15)', zIndex: 1040
+                    }}
+                  >
+                    {ROLE_OPTIONS.map(opt => (
+                      <button
+                        key={opt}
+                        onClick={() => { setRoleFilter(opt); setShowFilterMenu(false); }}
+                        className="btn w-100 d-flex align-items-center justify-content-between rounded-0 border-0 px-3 py-2"
+                        style={{ fontSize: '13px', color: textPrimary, textAlign: 'left' }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = hoverBg}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        {opt}
+                        {roleFilter === opt && <Check size={14} color="#3B82F6" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {isAdmin && (
+                <button
+                  onClick={() => setShowInviteModal(true)}
+                  className="btn btn-sm text-white d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0"
+                  style={{ backgroundColor: '#3B82F6', transition: 'all 0.15s ease' }}
+                >
+                  <Plus size={14} />
+                  Invite Member
+                </button>
+              )}
+            </div>
+          </div>
+
+          {loadError && (
+            <div className="alert alert-danger py-2 px-3 small d-flex justify-content-between align-items-center mb-3" role="alert">
+              {loadError}
+              <button className="btn btn-sm btn-link p-0 text-decoration-underline" onClick={loadTeam}>Retry</button>
+            </div>
+          )}
+
+          {/* SEARCH BAR */}
+          <div className="card border-0 mb-4" style={{ backgroundColor: cardBg, boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
+            <div className="card-body p-3 p-md-4">
+              <div className="position-relative">
+                <Search className="position-absolute" size={18} style={{ left: '16px', top: '12px', color: textSecondary }} />
+                <input
+                  type="text"
+                  placeholder="Search by name, email, or role..."
+                  className="form-control border-0 ps-5 py-2 shadow-none"
+                  style={{ backgroundColor: hoverBg, color: textPrimary, fontSize: '14px' }}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  onFocus={(e) => {
-                    e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
-                    e.currentTarget.style.borderColor = '#3B82F6';
-                    e.currentTarget.style.border = '1px solid #3B82F6';
-                  }}
-                  onBlur={(e) => {
-                    e.currentTarget.style.boxShadow = 'none';
-                    e.currentTarget.style.border = 'none';
-                  }}
                 />
               </div>
             </div>
           </div>
 
+          {loading && (
+            <p className="text-center small py-5 d-flex align-items-center justify-content-center gap-2" style={{ color: textSecondary }}>
+              <Loader2 size={14} className="spin" /> Loading team directory...
+            </p>
+          )}
+
           {/* TEAM MEMBERS GRID */}
-          <div className="row g-3 g-md-4">
-            {filteredTeam.map(member => (
-              <div key={member.id} className="col-12 col-md-6 col-xl-4">
-                <div 
-                  className="card border-0 h-100"
-                  style={{ 
-                    backgroundColor: cardBg,
-                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
-                    transition: 'all 0.2s ease',
-                    cursor: 'pointer',
-                    position: 'relative'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.boxShadow = '0 10px 25px rgba(0, 0, 0, 0.1)';
-                    e.currentTarget.style.transform = 'translateY(-4px)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.05)';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                  }}
-                >
-                  {/* More Options Button */}
-                  <button 
-                    className="btn p-1 border-0 rounded-2"
-                    style={{ 
-                      position: 'absolute',
-                      top: '12px',
-                      right: '12px',
-                      backgroundColor: 'transparent',
-                      color: textSecondary,
-                      transition: 'all 0.15s ease',
-                      zIndex: 10
+          {!loading && (
+            <div className="row g-3 g-md-4">
+              {filteredTeam.map(member => (
+                <div key={member.id} className="col-12 col-md-6 col-xl-4">
+                  <div
+                    className="card border-0 h-100"
+                    style={{
+                      backgroundColor: cardBg,
+                      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+                      transition: 'all 0.2s ease',
+                      position: 'relative'
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = hoverBg;
-                      e.currentTarget.style.color = textPrimary;
+                      e.currentTarget.style.boxShadow = '0 10px 25px rgba(0, 0, 0, 0.1)';
+                      e.currentTarget.style.transform = 'translateY(-4px)';
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                      e.currentTarget.style.color = textSecondary;
+                      e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.05)';
+                      e.currentTarget.style.transform = 'translateY(0)';
                     }}
-                    aria-label="More options"
                   >
-                    <MoreVertical size={16} />
-                  </button>
+                    <div className="card-body p-4 d-flex flex-column h-100">
 
-                  {/* Card Body */}
-                  <div className="card-body p-4 d-flex flex-column h-100">
-                    
-                    {/* User Header */}
-                    <div className="d-flex align-items-center gap-3 mb-4 pb-4" style={{ borderBottom: `1px solid ${borderColor}` }}>
-                      <div 
-                        className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold flex-shrink-0" 
-                        style={{ 
-                          width: '48px', 
-                          height: '48px', 
-                          backgroundColor: member.color, 
-                          fontSize: '16px',
-                          boxShadow: `0 2px 8px ${member.color}40`
-                        }}
-                      >
-                        {member.initials}
+                      {/* User Header */}
+                      <div className="d-flex align-items-center gap-3 mb-4 pb-4" style={{ borderBottom: `1px solid ${borderColor}` }}>
+                        <div
+                          className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold flex-shrink-0"
+                          style={{ width: '48px', height: '48px', backgroundColor: member.color, fontSize: '16px', boxShadow: `0 2px 8px ${member.color}40` }}
+                        >
+                          {member.initials}
+                        </div>
+                        <div className="min-w-0 flex-grow-1">
+                          <h6 className="fw-bold mb-0 text-truncate" style={{ fontSize: '14px', color: textPrimary }}>
+                            {member.name}
+                          </h6>
+                          <span className="small d-flex align-items-center gap-1 mt-1 text-truncate" style={{ color: textSecondary, fontSize: '12px' }}>
+                            <Shield size={12} style={{ color: '#3B82F6', flexShrink: 0 }} />
+                            {member.roleLabel}
+                          </span>
+                        </div>
                       </div>
-                      <div className="min-w-0 flex-grow-1">
-                        <h6 className="fw-bold mb-0 text-truncate" style={{ fontSize: '14px', color: textPrimary }}>
-                          {member.name}
-                        </h6>
-                        <span 
-                          className="small d-flex align-items-center gap-1 mt-1 text-truncate"
+
+                      {/* Contact Information — only real fields */}
+                      <div className="d-flex flex-column gap-2 mb-4 pb-4" style={{ borderBottom: `1px solid ${borderColor}` }}>
+                        <a
+                          href={`mailto:${member.email}`}
+                          className="d-flex align-items-center gap-2 text-truncate text-decoration-none"
                           style={{ color: textSecondary, fontSize: '12px' }}
                         >
-                          <Shield size={12} style={{ color: '#3B82F6', flexShrink: 0 }} /> 
-                          {member.role}
+                          <Mail size={13} style={{ flexShrink: 0 }} />
+                          <span className="text-truncate">{member.email}</span>
+                        </a>
+                        {member.joined && (
+                          <div className="d-flex align-items-center gap-2" style={{ color: textSecondary, fontSize: '12px' }}>
+                            <Calendar size={13} style={{ flexShrink: 0 }} />
+                            <span>Joined {member.joined}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Status Footer — real is_active field */}
+                      <div className="mt-auto d-flex justify-content-between align-items-center pt-2">
+                        <span className="small" style={{ color: textSecondary, fontSize: '11px' }}>
+                          Status
                         </span>
+                        {getStatusBadge(member.isActive)}
                       </div>
-                    </div>
 
-                    {/* Contact Information */}
-                    <div className="d-flex flex-column gap-2 mb-4 pb-4" style={{ borderBottom: `1px solid ${borderColor}` }}>
-                      <div className="d-flex align-items-center gap-2 text-truncate" style={{ color: textSecondary, fontSize: '12px' }}>
-                        <Mail size={13} style={{ flexShrink: 0 }} />
-                        <span className="text-truncate">{member.email}</span>
-                      </div>
-                      <div className="d-flex align-items-center gap-2" style={{ color: textSecondary, fontSize: '12px' }}>
-                        <Phone size={13} style={{ flexShrink: 0 }} />
-                        <span>{member.phone}</span>
-                      </div>
                     </div>
-
-                    {/* Status Footer */}
-                    <div className="mt-auto d-flex justify-content-between align-items-center pt-2">
-                      <span className="small" style={{ color: textSecondary, fontSize: '11px' }}>
-                        Status
-                      </span>
-                      {getStatusBadge(member.status)}
-                    </div>
-
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
 
-            {/* Empty State */}
-            {filteredTeam.length === 0 && (
-              <div className="col-12 text-center py-5">
-                <p className="small" style={{ color: textSecondary }}>
-                  No team members match your search criteria.
-                </p>
-              </div>
-            )}
-          </div>
+              {filteredTeam.length === 0 && (
+                <div className="col-12 text-center py-5">
+                  <p className="small" style={{ color: textSecondary }}>
+                    {teamMembers.length === 0 ? 'No team members yet.' : 'No team members match your search or filter.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
         </main>
       </div>
+
+      {/* INVITE MEMBER MODAL (admin only) */}
+      {isAdmin && showInviteModal && (
+        <div
+          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center p-3"
+          style={{ backgroundColor: 'rgba(15, 23, 42, 0.55)', zIndex: 1050 }}
+          onClick={() => !inviting && setShowInviteModal(false)}
+        >
+          <div
+            className="rounded-4 p-4 w-100"
+            style={{ maxWidth: '420px', backgroundColor: cardBg, boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <h5 className="fw-bold mb-0" style={{ color: textPrimary }}>Invite Member</h5>
+              <button className="btn btn-link p-0" style={{ color: textSecondary }} onClick={() => { setShowInviteModal(false); resetInviteForm(); }} disabled={inviting} aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
+            <p className="small mb-3" style={{ color: textSecondary }}>
+              This creates the account directly with the password you set below — there's no email-invite step yet, so share the credentials with them yourself.
+            </p>
+            {inviteError && <div className="alert alert-danger py-2 px-3 small mb-3">{inviteError}</div>}
+            <form onSubmit={handleInvite}>
+              <div className="mb-3">
+                <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Full name</label>
+                <input
+                  type="text" autoFocus value={inviteName} onChange={(e) => setInviteName(e.target.value)}
+                  className="form-control" disabled={inviting}
+                  style={{ backgroundColor: darkMode ? '#334155' : '#F8FAFC', color: textPrimary, border: `1px solid ${borderColor}` }}
+                />
+              </div>
+              <div className="mb-3">
+                <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Email</label>
+                <input
+                  type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)}
+                  className="form-control" disabled={inviting}
+                  style={{ backgroundColor: darkMode ? '#334155' : '#F8FAFC', color: textPrimary, border: `1px solid ${borderColor}` }}
+                />
+              </div>
+              <div className="mb-3">
+                <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Temporary password</label>
+                <input
+                  type="password" value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)}
+                  className="form-control" disabled={inviting} placeholder="At least 8 characters"
+                  style={{ backgroundColor: darkMode ? '#334155' : '#F8FAFC', color: textPrimary, border: `1px solid ${borderColor}` }}
+                />
+              </div>
+              <div className="mb-4">
+                <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Role</label>
+                <select
+                  value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}
+                  className="form-select" disabled={inviting}
+                  style={{ backgroundColor: darkMode ? '#334155' : '#F8FAFC', color: textPrimary, border: `1px solid ${borderColor}` }}
+                >
+                  <option value="staff">Staff</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div className="d-flex gap-2 justify-content-end">
+                <button
+                  type="button" onClick={() => { setShowInviteModal(false); resetInviteForm(); }}
+                  className="btn btn-sm border" disabled={inviting}
+                  style={{ color: textPrimary, borderColor: borderColor, backgroundColor: cardBg }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit" className="btn btn-sm text-white d-flex align-items-center gap-2"
+                  style={{ backgroundColor: '#3B82F6' }}
+                  disabled={inviting || !inviteName.trim() || !inviteEmail.trim() || invitePassword.length < 8}
+                >
+                  {inviting && <Loader2 size={14} className="spin" />}
+                  {inviting ? 'Creating...' : 'Create account'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* STYLES */}
       <style>{`
@@ -593,33 +589,22 @@ function TeamPage() {
           }
         }
 
-        /* Input Placeholder Darkmode Fix */
         input::placeholder {
           color: ${textSecondary} !important;
           opacity: 0.7;
         }
 
-        /* Pulse Animation for Notification Badge */
-        @keyframes pulse {
-          0%, 100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.7;
-          }
-        }
-
-        /* Smooth Transitions */
         button {
           transition: all 0.15s ease !important;
         }
 
-        /* Input Focus */
         input:focus {
           outline: none !important;
         }
 
-        /* Scrollbar */
+        .spin { animation: spin 0.8s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
         ::-webkit-scrollbar {
           width: 8px;
           height: 8px;
@@ -642,4 +627,4 @@ function TeamPage() {
   );
 }
 
-export default TeamPage;
+export default TeamPage;  

@@ -1,17 +1,167 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Filter, Search, MoreVertical, Calendar, CheckCircle2, Clock } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  Plus, Filter, Search, MoreVertical, Calendar, CheckCircle2, Clock,
+  AlertTriangle, X, Trash2, Pencil, Send, Loader2,
+  Menu, Bell, Moon, Sun, ChevronDown, LogOut
+} from 'lucide-react';
 import Sidebar from '../components/Sidebar';
-import { tasksService } from '../services/api';
+import { tasksService, usersService, activityService, getWebSocketUrl } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
-function TaskPage() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [tasksData, setTasksData] = useState([]);
-  const [loadingTasks, setLoadingTasks] = useState(true);
+const PRIORITY_OPTIONS = [
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'urgent', label: 'Urgent' },
+];
 
-  // Layout engine state variables synced with the dashboard layout
+const STATUS_OPTIONS = [
+  { value: 'pending', label: 'Pending' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'complete', label: 'Complete' },
+];
+
+// Fallback data so the board still looks alive if the API is unreachable
+// (offline dev, backend not started, etc). Shaped exactly like mapTask()'s
+// output so it flows through the same render path as real data.
+const FALLBACK_TASKS = [
+  { id: 'f1', title: 'Optimize database indexing schemas', tag: 'Backend', status: 'pending', priority: 'high', dueDateRaw: null, date: 'Jun 12', assigneeId: null, assigneeName: 'Maria Chen', assignee: 'MC', completionRequested: false },
+  { id: 'f2', title: 'Draft API system error definitions', tag: 'Architecture', status: 'pending', priority: 'medium', dueDateRaw: null, date: 'Jun 15', assigneeId: null, assigneeName: 'Jordan Diaz', assignee: 'JD', completionRequested: false },
+  { id: 'f3', title: 'Fix auth refresh-token memory leak', tag: 'Security', status: 'in_progress', priority: 'urgent', dueDateRaw: null, date: 'Jun 10', assigneeId: null, assigneeName: 'Sam Jones', assignee: 'SJ', completionRequested: false },
+  { id: 'f4', title: 'Re-align layout grid constraints', tag: 'UI/UX', status: 'in_progress', priority: 'low', dueDateRaw: null, date: 'Jun 18', assigneeId: null, assigneeName: 'Bella Brooks', assignee: 'BB', completionRequested: true },
+  { id: 'f5', title: 'Automate container image orchestration', tag: 'DevOps', status: 'complete', priority: 'high', dueDateRaw: null, date: 'Jun 08', assigneeId: null, assigneeName: 'Maria Chen', assignee: 'MC', completionRequested: false },
+];
+
+const AVATAR_COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#06B6D4', '#F59E0B', '#10B981'];
+function colorForString(str) {
+  const s = String(str || '');
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) hash = s.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return 'No date';
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return 'No date';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// <input type="date"> needs a plain YYYY-MM-DD value, not a full ISO datetime.
+function toDateInputValue(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
+}
+
+function formatRelativeTime(dateString) {
+  if (!dateString) return '';
+  const then = new Date(dateString).getTime();
+  if (Number.isNaN(then)) return '';
+  const diffMs = Date.now() - then;
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function mapTask(t) {
+  return {
+    id: t.id,
+    title: t.title,
+    tag: t.tag || 'General',
+    status: t.status || 'pending',
+    priority: t.priority || 'medium',
+    dueDateRaw: t.due_date || null,
+    date: formatDate(t.due_date),
+    assigneeId: t.assignee ?? null,
+    assigneeName: t.assignee_name || null,
+    assignee: t.assignee_initials || '—',
+    completionRequested: !!t.completion_requested,
+  };
+}
+
+function mapActivity(a) {
+  return {
+    id: a.id,
+    name: a.user_name || 'Someone',
+    initials: a.user_initials || (a.user_name ? a.user_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '?'),
+    action: a.action,
+    time: formatRelativeTime(a.created_at),
+    avatarBg: colorForString(a.user_name || a.user),
+    isRead: !!a.is_read,
+  };
+}
+
+// pending/overdue both live in the "To Do" lane; overdue gets a distinct
+// red treatment on the card itself rather than its own column, so the
+// 3-lane board stays intact.
+function bucketOf(status) {
+  if (status === 'in_progress') return 'in-progress';
+  if (status === 'complete') return 'completed';
+  return 'todo';
+}
+
+function TaskPage() {
+  const { user, logout } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const [tasks, setTasks] = useState([]);
+  const [loadingTasks, setLoadingTasks] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+
+  const [users, setUsers] = useState([]);
+
+  // Filter Lanes popover
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [selectedPriorities, setSelectedPriorities] = useState([]);
+  const filterRef = useRef(null);
+
+  // Per-card kebab menu
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const menuRef = useRef(null);
+
+  // Create/Edit modal (admin only)
+  const [showTicketModal, setShowTicketModal] = useState(false);
+  const [editingTask, setEditingTask] = useState(null); // null = create mode
+  const [form, setForm] = useState({ title: '', tag: '', assigneeId: '', priority: 'medium', dueDate: '', status: 'pending' });
+  const [formError, setFormError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Delete confirmation
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Request-completion (staff)
+  const [requestingId, setRequestingId] = useState(null);
+  const [actionError, setActionError] = useState(null);
+
+  // Notifications / activity feed
+  const [notifications, setNotifications] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(true);
+  const [activityError, setActivityError] = useState(null);
+  const [dismissedIds, setDismissedIds] = useState(() => new Set());
+  const [markingAllRead, setMarkingAllRead] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const notifRef = useRef(null);
+
+  // Profile dropdown
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const profileRef = useRef(null);
+
+  const wsRef = useRef(null);
 
   const handleToggleSidebar = () => {
     if (window.innerWidth < 992) {
@@ -21,252 +171,913 @@ function TaskPage() {
     }
   };
 
-  useEffect(() => {
-    const fetchTasks = async () => {
-      try {
-        const data = await tasksService.getAll();
-        if (Array.isArray(data) && data.length > 0) {
-          setTasksData(data.map(t => ({
-            id: t.id,
-            title: t.title,
-            project: t.tag || 'General',
-            status: t.status === 'in_progress' ? 'in-progress' : (t.status === 'complete' ? 'completed' : 'todo'),
-            urgency: 'Medium',
-            date: t.due_date ? new Date(t.due_date).toLocaleDateString() : 'No date',
-            assignee: t.assignee_initials || 'ME',
-            color: '#3B82F6'
-          })));
-        } else {
-          // Fallback mock initial tasks if DB is empty
-          setTasksData([
-            { id: 1, title: 'Optimize database indexing schemas', project: 'Backend', status: 'todo', urgency: 'High', date: 'June 12', assignee: 'MC', color: '#EF4444' },
-            { id: 2, title: 'Draft API system error definitions', project: 'Architecture', status: 'todo', urgency: 'Medium', date: 'June 15', assignee: 'JD', color: '#F59E0B' },
-            { id: 3, title: 'Fix auth refresh-token memory leak', project: 'Security', status: 'in-progress', urgency: 'Urgent', date: 'June 10', assignee: 'SJ', color: '#DC2626' },
-            { id: 4, title: 'Re-align layout grid constraints', project: 'UI/UX', status: 'in-progress', urgency: 'Low', date: 'June 18', assignee: 'BB', color: '#3B82F6' },
-            { id: 5, title: 'Automate container image orchestration', project: 'DevOps', status: 'completed', urgency: 'High', date: 'June 08', assignee: 'MC', color: '#10B981' },
-          ]);
-        }
-      } catch (err) {
-        // Fallback for visual continuity if offline
-        setTasksData([
-          { id: 1, title: 'Optimize database indexing schemas', project: 'Backend', status: 'todo', urgency: 'High', date: 'June 12', assignee: 'MC', color: '#EF4444' },
-          { id: 2, title: 'Draft API system error definitions', project: 'Architecture', status: 'todo', urgency: 'Medium', date: 'June 15', assignee: 'JD', color: '#F59E0B' },
-          { id: 3, title: 'Fix auth refresh-token memory leak', project: 'Security', status: 'in-progress', urgency: 'Urgent', date: 'June 10', assignee: 'SJ', color: '#DC2626' },
-          { id: 4, title: 'Re-align layout grid constraints', project: 'UI/UX', status: 'in-progress', urgency: 'Low', date: 'June 18', assignee: 'BB', color: '#3B82F6' },
-          { id: 5, title: 'Automate container image orchestration', project: 'DevOps', status: 'completed', urgency: 'High', date: 'June 08', assignee: 'MC', color: '#10B981' },
-        ]);
-      } finally {
-        setLoadingTasks(false);
-      }
-    };
-    fetchTasks();
+  const loadTasks = useCallback(async () => {
+    setLoadingTasks(true);
+    setLoadError(null);
+    try {
+      const data = await tasksService.getAll();
+      const list = Array.isArray(data) ? data : (data?.results || []);
+      setTasks(list.map(mapTask));
+    } catch (err) {
+      setLoadError('Could not reach the server — showing sample data.');
+      setTasks(FALLBACK_TASKS);
+    } finally {
+      setLoadingTasks(false);
+    }
   }, []);
 
-  const getUrgencyBadge = (urgency) => {
-    switch (urgency) {
-      case 'Urgent': return <span className="badge bg-danger bg-opacity-10 text-danger px-2 py-1" style={{ fontSize: '11px' }}>Urgent</span>;
-      case 'High': return <span className="badge bg-warning bg-opacity-10 text-warning px-2 py-1" style={{ fontSize: '11px', color: '#D97706' }}>High Priority</span>;
-      case 'Medium': return <span className="badge bg-primary bg-opacity-10 text-primary px-2 py-1" style={{ fontSize: '11px' }}>Medium</span>;
-      default: return <span className="badge bg-secondary bg-opacity-10 text-secondary px-2 py-1" style={{ fontSize: '11px' }}>Low</span>;
+  const loadActivity = useCallback(async () => {
+    setActivityLoading(true);
+    setActivityError(null);
+    try {
+      const data = await activityService.getAll();
+      const list = Array.isArray(data) ? data : (data?.results || []);
+      setNotifications(list.map(mapActivity));
+    } catch (err) {
+      setActivityError('Could not load activity.');
+    } finally {
+      setActivityLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTasks();
+    loadActivity();
+  }, [loadTasks, loadActivity]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    (async () => {
+      try {
+        const data = await usersService.getAll();
+        setUsers(Array.isArray(data) ? data : (data?.results || []));
+      } catch (err) {
+        // Non-fatal — the assignee dropdown just falls back to unassigned.
+      }
+    })();
+  }, [isAdmin]);
+
+  // Real-time updates over WebSocket — new/updated tasks and activity land
+  // without a manual refresh. Reconnects automatically if the connection drops.
+  useEffect(() => {
+    let socket;
+    let reconnectTimer;
+    let stopped = false;
+
+    function connect() {
+      socket = new WebSocket(getWebSocketUrl());
+      wsRef.current = socket;
+
+      socket.onmessage = (event) => {
+        let payload;
+        try {
+          payload = JSON.parse(event.data);
+        } catch {
+          return;
+        }
+
+        if (payload.type === 'task_created') {
+          const mapped = mapTask(payload.task);
+          setTasks(prev => (prev.some(t => t.id === mapped.id) ? prev : [mapped, ...prev]));
+        } else if (payload.type === 'task_updated') {
+          const mapped = mapTask(payload.task);
+          setTasks(prev => {
+            const exists = prev.some(t => t.id === mapped.id);
+            return exists ? prev.map(t => (t.id === mapped.id ? mapped : t)) : [mapped, ...prev];
+          });
+        } else if (payload.type === 'activity_created') {
+          const mapped = mapActivity(payload.activity);
+          setNotifications(prev => (prev.some(n => n.id === mapped.id) ? prev : [mapped, ...prev]));
+        }
+      };
+
+      socket.onclose = () => {
+        if (!stopped) reconnectTimer = setTimeout(connect, 3000);
+      };
+
+      socket.onerror = () => {
+        socket.close();
+      };
+    }
+
+    connect();
+
+    return () => {
+      stopped = true;
+      clearTimeout(reconnectTimer);
+      wsRef.current?.close();
+    };
+  }, []);
+
+  // Close popovers/dropdowns on outside click
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (filterRef.current && !filterRef.current.contains(e.target)) setShowFilterMenu(false);
+      if (menuRef.current && !menuRef.current.contains(e.target)) setOpenMenuId(null);
+      if (notifRef.current && !notifRef.current.contains(e.target)) setShowNotifications(false);
+      if (profileRef.current && !profileRef.current.contains(e.target)) setShowProfileMenu(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const userInitials = user?.full_name
+    ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+    : (user?.email ? user.email[0].toUpperCase() : 'U');
+  const userName = user?.full_name || user?.email || 'User';
+  const userRole = isAdmin ? 'Operations Admin' : 'Staff Member';
+
+  const togglePriorityFilter = (value) => {
+    setSelectedPriorities(prev =>
+      prev.includes(value) ? prev.filter(p => p !== value) : [...prev, value]
+    );
+  };
+
+  const filteredTasks = tasks.filter(t => {
+    const matchesSearch =
+      t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.tag.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesPriority = selectedPriorities.length === 0 || selectedPriorities.includes(t.priority);
+    return matchesSearch && matchesPriority;
+  });
+
+  const visibleNotifications = notifications.filter(n => !dismissedIds.has(n.id));
+  const unreadCount = visibleNotifications.filter(n => !n.isRead).length;
+
+  const getPriorityBadge = (priority) => {
+    switch (priority) {
+      case 'urgent': return <span className="badge bg-danger bg-opacity-10 text-danger px-2 py-1" style={{ fontSize: '11px' }}>Urgent</span>;
+      case 'high': return <span className="badge bg-warning bg-opacity-10 px-2 py-1" style={{ fontSize: '11px', color: '#D97706' }}>High Priority</span>;
+      case 'low': return <span className="badge bg-secondary bg-opacity-10 text-secondary px-2 py-1" style={{ fontSize: '11px' }}>Low</span>;
+      default: return <span className="badge bg-primary bg-opacity-10 text-primary px-2 py-1" style={{ fontSize: '11px' }}>Medium</span>;
     }
   };
 
-  const filteredTasks = tasksData.filter(t => 
-    t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    t.project.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // --- Create / Edit ---------------------------------------------------
+
+  const openCreateModal = () => {
+    setEditingTask(null);
+    setForm({ title: '', tag: '', assigneeId: '', priority: 'medium', dueDate: '', status: 'pending' });
+    setFormError(null);
+    setShowTicketModal(true);
+  };
+
+  const openEditModal = (task) => {
+    setEditingTask(task);
+    setForm({
+      title: task.title,
+      tag: task.tag === 'General' ? '' : task.tag,
+      assigneeId: task.assigneeId ? String(task.assigneeId) : '',
+      priority: task.priority,
+      dueDate: toDateInputValue(task.dueDateRaw),
+      status: task.status,
+    });
+    setFormError(null);
+    setShowTicketModal(true);
+    setOpenMenuId(null);
+  };
+
+  const closeTicketModal = () => {
+    if (submitting) return;
+    setShowTicketModal(false);
+    setEditingTask(null);
+  };
+
+  const handleSubmitTicket = async (e) => {
+    e.preventDefault();
+    if (!form.title.trim()) {
+      setFormError('Give the task a title.');
+      return;
+    }
+    setSubmitting(true);
+    setFormError(null);
+    const payload = {
+      title: form.title.trim(),
+      tag: form.tag.trim(),
+      assignee: form.assigneeId ? Number(form.assigneeId) : null,
+      priority: form.priority,
+      due_date: form.dueDate || null,
+      status: form.status,
+    };
+    try {
+      if (editingTask) {
+        const updated = await tasksService.update(editingTask.id, payload);
+        setTasks(prev => prev.map(t => (t.id === editingTask.id ? mapTask(updated) : t)));
+      } else {
+        const created = await tasksService.create(payload);
+        setTasks(prev => [mapTask(created), ...prev]);
+      }
+      setShowTicketModal(false);
+      setEditingTask(null);
+    } catch (err) {
+      setFormError(err.message || 'Could not save the task. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // --- Quick status change (admin) -------------------------------------
+
+  const handleStatusChange = async (task, newStatus) => {
+    setOpenMenuId(null);
+    if (newStatus === task.status) return;
+    setActionError(null);
+    try {
+      const updated = await tasksService.update(task.id, { status: newStatus });
+      setTasks(prev => prev.map(t => (t.id === task.id ? mapTask(updated) : t)));
+    } catch (err) {
+      setActionError(err.message || 'Could not update the task status.');
+    }
+  };
+
+  // --- Delete ------------------------------------------------------------
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDeleteId) return;
+    setDeleting(true);
+    try {
+      await tasksService.delete(confirmDeleteId);
+      setTasks(prev => prev.filter(t => t.id !== confirmDeleteId));
+      setConfirmDeleteId(null);
+    } catch (err) {
+      setActionError(err.message || 'Could not delete the task.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // --- Request completion (staff) -----------------------------------------
+
+  const handleRequestCompletion = async (task) => {
+    setOpenMenuId(null);
+    setRequestingId(task.id);
+    setActionError(null);
+    try {
+      const updated = await tasksService.requestCompletion(task.id);
+      setTasks(prev => prev.map(t => (t.id === task.id ? mapTask(updated) : t)));
+    } catch (err) {
+      setActionError(err.message || 'Could not request a completion review.');
+    } finally {
+      setRequestingId(null);
+    }
+  };
+
+  // --- Notifications -------------------------------------------------------
+
+  const handleMarkAllRead = async () => {
+    setMarkingAllRead(true);
+    const previous = notifications;
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    try {
+      await activityService.markAllRead();
+    } catch (err) {
+      setNotifications(previous);
+      setActivityError('Could not mark notifications as read. Please try again.');
+    } finally {
+      setMarkingAllRead(false);
+    }
+  };
+
+  const handleDismissNotification = (id) => {
+    setDismissedIds(prev => new Set(prev).add(id));
+  };
+
+  const handleSignOut = () => {
+    setShowProfileMenu(false);
+    logout();
+    window.location.href = '/signin';
+  };
+
+  // --- Theme ---------------------------------------------------------------
+
+  const bgColor = darkMode ? '#0F172A' : '#F8FAFC';
+  const cardBg = darkMode ? '#1E293B' : '#FFFFFF';
+  const textPrimary = darkMode ? '#F1F5F9' : '#0F172A';
+  const textSecondary = darkMode ? '#CBD5E1' : '#64748B';
+  const borderColor = darkMode ? '#334155' : '#E2E8F0';
+  const inputBg = darkMode ? '#334155' : '#F8FAFC';
+
+  // --- Card renderer ----------------------------------------------------
+
+  const avatarColorFor = (bucket) => {
+    if (bucket === 'in-progress') return '#3B82F6';
+    if (bucket === 'completed') return '#10B981';
+    return '#8B5CF6';
+  };
+
+  const renderCard = (task) => {
+    const bucket = bucketOf(task.status);
+    const isOverdue = task.status === 'overdue';
+    const isComplete = task.status === 'complete';
+    const canManage = isAdmin;
+    const canRequestCompletion = !isAdmin && !isComplete && !task.completionRequested;
+
+    return (
+      <div
+        key={task.id}
+        className="card border-0 shadow-sm p-3 rounded-3 hover-card transition-all"
+        style={{
+          backgroundColor: cardBg,
+          opacity: isComplete ? 0.85 : 1,
+          borderLeft: isOverdue ? '3px solid #DC2626' : (bucket === 'in-progress' ? `3px solid ${avatarColorFor(bucket)}` : 'none'),
+        }}
+      >
+        <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <span className="badge border uppercase px-2 py-0.5" style={{ fontSize: '10px', backgroundColor: darkMode ? '#334155' : '#F1F5F9', color: textSecondary, borderColor: borderColor }}>{task.tag}</span>
+          <div className="position-relative">
+            <button
+              className="btn p-0 border-0 bg-transparent"
+              style={{ color: textSecondary }}
+              onClick={() => setOpenMenuId(openMenuId === task.id ? null : task.id)}
+            >
+              <MoreVertical size={14} />
+            </button>
+            {openMenuId === task.id && (
+              <div
+                ref={menuRef}
+                className="position-absolute shadow rounded-3 border p-1"
+                style={{ right: 0, top: '20px', minWidth: '190px', zIndex: 20, backgroundColor: cardBg, borderColor: borderColor }}
+              >
+                {canManage && (
+                  <>
+                    <button className="btn btn-sm w-100 text-start d-flex align-items-center gap-2 px-2 py-1" style={{ color: textPrimary }} onClick={() => openEditModal(task)}>
+                      <Pencil size={13} /> Edit task
+                    </button>
+                    <div className="px-2 py-1 small" style={{ fontSize: '10px', color: textSecondary }}>MOVE TO</div>
+                    {STATUS_OPTIONS.filter(s => s.value !== task.status).map(s => (
+                      <button
+                        key={s.value}
+                        className="btn btn-sm w-100 text-start px-2 py-1"
+                        style={{ color: textPrimary }}
+                        onClick={() => handleStatusChange(task, s.value)}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                    <hr className="my-1" style={{ borderColor: borderColor }} />
+                    <button
+                      className="btn btn-sm w-100 text-start d-flex align-items-center gap-2 px-2 py-1 text-danger"
+                      onClick={() => { setOpenMenuId(null); setConfirmDeleteId(task.id); }}
+                    >
+                      <Trash2 size={13} /> Delete task
+                    </button>
+                  </>
+                )}
+                {canRequestCompletion && (
+                  <button
+                    className="btn btn-sm w-100 text-start d-flex align-items-center gap-2 px-2 py-1"
+                    style={{ color: textPrimary }}
+                    onClick={() => handleRequestCompletion(task)}
+                    disabled={requestingId === task.id}
+                  >
+                    {requestingId === task.id ? <Loader2 size={13} className="spin" /> : <Send size={13} />}
+                    Request completion review
+                  </button>
+                )}
+                {!canManage && !canRequestCompletion && (
+                  <div className="px-2 py-1 small" style={{ color: textSecondary }}>No actions available</div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <h6 className="fw-semibold mb-3 lh-sm" style={{ fontSize: '13.5px', color: isComplete ? textSecondary : textPrimary, textDecoration: isComplete ? 'line-through' : 'none' }}>
+          {task.title}
+        </h6>
+
+        {task.completionRequested && !isComplete && (
+          <div className="d-flex align-items-center gap-1 text-primary small fw-semibold mb-2" style={{ fontSize: '11px' }}>
+            <Send size={12} /> Review requested
+          </div>
+        )}
+
+        <div className="d-flex justify-content-between align-items-center pt-2.5" style={{ borderTop: `1px solid ${borderColor}` }}>
+          <div className={`d-flex align-items-center gap-1 small ${isOverdue ? 'text-danger fw-semibold' : ''}`} style={{ fontSize: '11px', color: isOverdue ? undefined : textSecondary }}>
+            {isOverdue ? <AlertTriangle size={12} /> : (bucket === 'in-progress' ? <Clock size={12} /> : <Calendar size={12} />)}
+            {isOverdue ? `Overdue · ${task.date}` : task.date}
+          </div>
+          <div className="d-flex align-items-center gap-2">
+            {isComplete ? (
+              <span className="text-success d-flex align-items-center gap-1 small fw-semibold" style={{ fontSize: '11px' }}>
+                <CheckCircle2 size={12} /> Verified
+              </span>
+            ) : getPriorityBadge(task.priority)}
+            <div
+              className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold text-center"
+              style={{ width: '26px', height: '26px', fontSize: '10px', backgroundColor: avatarColorFor(bucket) }}
+              title={task.assigneeName || 'Unassigned'}
+            >
+              {task.assignee}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const columns = [
+    { key: 'todo', label: 'Backlog / To Do', dotColor: '#64748B', tint: 'rgba(100, 116, 139, 0.15)' },
+    { key: 'in-progress', label: 'In Active Progress', dotColor: '#3B82F6', tint: 'rgba(59, 130, 246, 0.15)' },
+    { key: 'completed', label: 'Done / Closed', dotColor: '#10B981', tint: 'rgba(16, 185, 129, 0.15)' },
+  ];
 
   return (
-    <div className="d-flex min-vh-100 bg-light text-dark" style={{ fontFamily: 'sans-serif', overflowX: 'hidden' }}>
-      
+    <div
+      className="d-flex min-vh-100"
+      style={{
+        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+        backgroundColor: bgColor,
+        color: textPrimary,
+        transition: 'background-color 0.3s ease, color 0.3s ease',
+        overflowX: 'hidden'
+      }}
+    >
+
       {/* SIDEBAR */}
-      <Sidebar 
-        mobileOpen={mobileOpen} 
-        setMobileOpen={setMobileOpen} 
-        desktopCollapsed={desktopCollapsed} 
+      <Sidebar
+        mobileOpen={mobileOpen}
+        setMobileOpen={setMobileOpen}
+        desktopCollapsed={desktopCollapsed}
+        darkMode={darkMode}
+        onDarkModeChange={setDarkMode}
         onToggleSidebar={handleToggleSidebar}
       />
 
-      {/* PRIMARY SYSTEM WORKSPACE PANEL */}
-      <div 
+      {/* MAIN VIEWPORT LAYOUT WRAPPER */}
+      <div
         className="flex-grow-1 d-flex flex-column min-w-0"
         id="main-content-wrapper"
         style={{ transition: 'margin-left 0.2s ease-in-out' }}
       >
+
+        {/* TOP RESPONSIVE NAVBAR */}
+        <header
+          className="navbar navbar-expand fixed-top px-3 px-md-4"
+          id="global-header"
+          style={{
+            height: '64px',
+            zIndex: 1030,
+            transition: 'all 0.2s ease-in-out',
+            backgroundColor: cardBg,
+            borderBottom: `1px solid ${borderColor}`,
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
+          }}
+        >
+          <div className="container-fluid d-flex justify-content-between align-items-center p-0">
+
+            {/* Left Nav Controls */}
+            <div className="d-flex align-items-center gap-2 gap-md-3">
+              <button
+                onClick={handleToggleSidebar}
+                className="btn btn-link p-1 text-decoration-none shadow-none border-0"
+                style={{ color: textPrimary, transition: 'all 0.15s ease' }}
+                aria-label="Toggle sidebar"
+              >
+                <Menu size={20} />
+              </button>
+
+              <div className="position-relative d-none d-md-block">
+                <Search
+                  className="position-absolute"
+                  size={16}
+                  style={{ left: '12px', top: '10px', color: textSecondary, transition: 'color 0.15s ease' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Search across active tasks and backlogs..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="form-control form-control-sm border-0 ps-5 rounded-3"
+                  style={{
+                    width: '260px',
+                    height: '36px',
+                    backgroundColor: darkMode ? '#334155' : '#F1F5F9',
+                    color: textPrimary,
+                    transition: 'all 0.15s ease',
+                    border: searchFocused ? `2px solid #3B82F6` : 'none',
+                    boxShadow: searchFocused ? '0 0 0 3px rgba(59, 130, 246, 0.1)' : 'none'
+                  }}
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setSearchFocused(false)}
+                />
+              </div>
+            </div>
+
+            {/* Right Nav Profiling & Notifications */}
+            <div className="d-flex align-items-center gap-2 gap-sm-3">
+
+              {/* Dark Mode Toggle */}
+              <button
+                onClick={() => setDarkMode(!darkMode)}
+                className="btn p-2 rounded-circle border-0"
+                style={{ transition: 'all 0.15s ease', backgroundColor: darkMode ? '#334155' : '#F1F5F9', color: textPrimary }}
+                aria-label="Toggle dark mode"
+              >
+                {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+              </button>
+
+              {/* Notifications Bell */}
+              <div className="position-relative" ref={notifRef}>
+                <button
+                  onClick={() => setShowNotifications(prev => !prev)}
+                  className="btn position-relative p-2 rounded-circle border-0"
+                  style={{
+                    transition: 'all 0.15s ease',
+                    backgroundColor: showNotifications ? (darkMode ? '#334155' : '#F1F5F9') : 'transparent',
+                    color: showNotifications ? textPrimary : textSecondary
+                  }}
+                  aria-label="View notifications"
+                >
+                  <Bell size={18} />
+                  {unreadCount > 0 && (
+                    <span
+                      className="position-absolute rounded-circle"
+                      style={{
+                        top: '6px', right: '6px', width: '8px', height: '8px',
+                        backgroundColor: '#EF4444', boxShadow: '0 0 0 2px ' + cardBg, animation: 'pulse 2s infinite'
+                      }}
+                    ></span>
+                  )}
+                </button>
+
+                {showNotifications && (
+                  <div
+                    className="position-absolute rounded-3 overflow-hidden"
+                    style={{
+                      top: '46px', right: 0, width: '300px', backgroundColor: cardBg,
+                      border: `1px solid ${borderColor}`, boxShadow: '0 10px 25px rgba(0,0,0,0.15)', zIndex: 1040
+                    }}
+                  >
+                    <div className="d-flex justify-content-between align-items-center p-3" style={{ borderBottom: `1px solid ${borderColor}` }}>
+                      <span className="fw-bold small" style={{ color: textPrimary }}>Notifications</span>
+                      <button
+                        onClick={handleMarkAllRead}
+                        disabled={markingAllRead || unreadCount === 0}
+                        className="btn btn-link p-0 text-decoration-none d-flex align-items-center gap-1"
+                        style={{ fontSize: '11px', color: '#3B82F6', opacity: unreadCount === 0 ? 0.5 : 1 }}
+                      >
+                        {markingAllRead && <Loader2 size={12} className="spin" />}
+                        Mark all read
+                      </button>
+                    </div>
+                    <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
+                      {activityLoading && (
+                        <p className="text-center small p-3 mb-0 d-flex align-items-center justify-content-center gap-2" style={{ color: textSecondary }}>
+                          <Loader2 size={14} className="spin" /> Loading...
+                        </p>
+                      )}
+                      {activityError && !activityLoading && (
+                        <p className="text-center small p-3 mb-0" style={{ color: '#EF4444' }}>{activityError}</p>
+                      )}
+                      {!activityLoading && !activityError && visibleNotifications.length === 0 && (
+                        <p className="text-center small p-3 mb-0" style={{ color: textSecondary }}>You're all caught up.</p>
+                      )}
+                      {visibleNotifications.map(n => (
+                        <div
+                          key={n.id}
+                          className="d-flex gap-2 align-items-start p-2 px-3"
+                          style={{
+                            backgroundColor: n.isRead ? 'transparent' : (darkMode ? '#1E293B' : '#EFF6FF'),
+                            borderBottom: `1px solid ${borderColor}`
+                          }}
+                        >
+                          <div
+                            className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold flex-shrink-0"
+                            style={{ width: '28px', height: '28px', backgroundColor: n.avatarBg, fontSize: '10px' }}
+                          >
+                            {n.initials}
+                          </div>
+                          <div className="flex-grow-1 min-w-0">
+                            <p className="mb-0" style={{ fontSize: '12px', color: textPrimary }}>
+                              <span className="fw-bold">{n.name}</span>{' '}
+                              <span style={{ color: textSecondary }}>{n.action}</span>
+                            </p>
+                            <span style={{ fontSize: '10px', color: textSecondary }}>{n.time}</span>
+                          </div>
+                          <button
+                            onClick={() => handleDismissNotification(n.id)}
+                            className="btn btn-link p-0 flex-shrink-0"
+                            style={{ color: textSecondary }}
+                            aria-label="Dismiss notification"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="vr opacity-25 my-auto" style={{ height: '24px', backgroundColor: borderColor }}></div>
+
+              {/* User Profile */}
+              <div className="position-relative" ref={profileRef}>
+                <div
+                  className="d-flex align-items-center gap-2 ps-1"
+                  style={{ cursor: 'pointer', transition: 'opacity 0.15s ease' }}
+                  onClick={() => setShowProfileMenu(prev => !prev)}
+                >
+                  <div
+                    className="rounded-circle text-white d-flex align-items-center justify-content-center font-semibold flex-shrink-0"
+                    style={{
+                      width: '36px', height: '36px', backgroundColor: '#8B5CF6', fontSize: '13px', fontWeight: 600,
+                      letterSpacing: '0.02em', boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)', transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {userInitials}
+                  </div>
+                  <div className="d-none d-sm-block text-start">
+                    <p className="mb-0 small fw-bold" style={{ color: textPrimary }}>{userName}</p>
+                    <span className="d-block" style={{ fontSize: '11px', color: textSecondary, marginTop: '2px' }}>{userRole}</span>
+                  </div>
+                  <ChevronDown size={14} className="d-none d-sm-block" style={{ color: textSecondary }} />
+                </div>
+
+                {showProfileMenu && (
+                  <div
+                    className="position-absolute rounded-3 overflow-hidden"
+                    style={{
+                      top: '48px', right: 0, width: '180px', backgroundColor: cardBg,
+                      border: `1px solid ${borderColor}`, boxShadow: '0 10px 25px rgba(0,0,0,0.15)', zIndex: 1040
+                    }}
+                  >
+                    <button
+                      onClick={handleSignOut}
+                      className="btn w-100 d-flex align-items-center gap-2 rounded-0 border-0 px-3 py-2"
+                      style={{ color: '#EF4444', fontSize: '13px', textAlign: 'left' }}
+                    >
+                      <LogOut size={14} /> Sign out
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+        </header>
+
         <main className="p-3 p-md-4 flex-grow-1" style={{ paddingTop: 'calc(64px + 1.5rem)' }}>
-          
+
           {/* PAGE HEADER BLOCK */}
-          <div className="d-flex flex-column sm:flex-row justify-content-between align-items-start gap-4 mb-4 mt-3">
+          <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start gap-3 mb-4 mt-5">
             <div>
-              <h1 className="h3 fw-bold mb-1 mt-5" style={{ color: '#0F172A' }}>Workspace Tasks</h1>
-              <p className="text-muted small mb-0">Manage deployment items, review backlog pipelines, and assign workloads.</p>
+              <h1 className="h3 fw-bold mb-1" style={{ color: textPrimary }}>Workspace Tasks</h1>
+              <p className="small mb-0" style={{ color: textSecondary }}>
+                {isAdmin
+                  ? 'Manage deployment items, review backlog pipelines, and assign workloads.'
+                  : 'Your assigned tasks — flag a task for review once you\u2019re done.'}
+              </p>
             </div>
             <div className="d-flex gap-2 w-100 w-sm-auto justify-content-sm-end">
-              <button className="btn btn-white btn-sm border d-flex align-items-center justify-content-center gap-2 bg-white shadow-sm flex-grow-1 flex-sm-grow-0 py-2 px-3 rounded-3 text-secondary">
-                <Filter size={14} />
-                Filter Lanes
-              </button>
-              <button className="btn btn-sm text-white d-flex align-items-center justify-content-center gap-2 shadow-sm flex-grow-1 flex-sm-grow-0 py-2 px-3 rounded-3" style={{ backgroundColor: '#3B82F6', border: 'none' }}>
-                <Plus size={14} />
-                Create Ticket
-              </button>
+              <div className="position-relative" ref={filterRef}>
+                <button
+                  className="btn btn-sm border d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0 py-2 px-3 rounded-3"
+                  style={{ backgroundColor: showFilterMenu ? (darkMode ? '#334155' : '#F1F5F9') : cardBg, color: textPrimary, borderColor: borderColor }}
+                  onClick={() => setShowFilterMenu(v => !v)}
+                >
+                  <Filter size={14} />
+                  Filter Lanes {selectedPriorities.length > 0 && `(${selectedPriorities.length})`}
+                </button>
+                {showFilterMenu && (
+                  <div className="position-absolute shadow rounded-3 border p-3" style={{ right: 0, top: '42px', minWidth: '200px', zIndex: 20, backgroundColor: cardBg, borderColor: borderColor }}>
+                    <div className="small fw-semibold mb-2" style={{ fontSize: '11px', color: textSecondary }}>PRIORITY</div>
+                    {PRIORITY_OPTIONS.map(opt => (
+                      <div className="form-check mb-1" key={opt.value}>
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id={`filter-${opt.value}`}
+                          checked={selectedPriorities.includes(opt.value)}
+                          onChange={() => togglePriorityFilter(opt.value)}
+                        />
+                        <label className="form-check-label small" style={{ color: textPrimary }} htmlFor={`filter-${opt.value}`}>{opt.label}</label>
+                      </div>
+                    ))}
+                    {selectedPriorities.length > 0 && (
+                      <button className="btn btn-sm btn-link p-0 mt-1" onClick={() => setSelectedPriorities([])}>Clear all</button>
+                    )}
+                  </div>
+                )}
+              </div>
+              {isAdmin && (
+                <button
+                  className="btn btn-sm text-white d-flex align-items-center justify-content-center gap-2 shadow-sm flex-grow-1 flex-sm-grow-0 py-2 px-3 rounded-3"
+                  style={{ backgroundColor: '#3B82F6', border: 'none' }}
+                  onClick={openCreateModal}
+                >
+                  <Plus size={14} />
+                  Create Ticket
+                </button>
+              )}
             </div>
           </div>
 
-          {/* FILTER & SEARCH SEARCH BAR UTILITIES */}
-          <div className="card border-0 shadow-sm p-2 mb-4 bg-white rounded-3">
-            <div className="position-relative w-100">
-              <Search className="position-absolute text-muted opacity-50" size={18} style={{ left: '12px', top: '12px' }} />
-              <input 
-                type="text" 
-                placeholder="Search across active tasks and backlogs..." 
-                className="form-control border-0 bg-transparent ps-5 py-2 shadow-none"
-                style={{ fontSize: '14px' }}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+          {loadError && (
+            <div className="alert alert-warning py-2 px-3 small mb-3">{loadError}</div>
+          )}
+          {actionError && (
+            <div className="alert alert-danger py-2 px-3 small mb-3 d-flex justify-content-between align-items-center">
+              {actionError}
+              <button className="btn-close btn-sm" onClick={() => setActionError(null)}></button>
             </div>
-          </div>
+          )}
 
-          {/* WORKSPACE STRATA BOARDS LAYOUT GRID */}
-          <div className="row g-3 g-xl-4 align-items-start">
-            
-            {/* COLUMN 1: TO DO STRATUM */}
-            <div className="col-12 col-lg-4">
-              <div className="card bg-light border-0 p-2 rounded-3">
-                <div className="d-flex justify-content-between align-items-center px-2 py-1 mb-2">
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="rounded-circle" style={{ width: '8px', height: '8px', backgroundColor: '#64748B' }}></span>
-                    <h5 className="mb-0 fw-bold text-dark" style={{ fontSize: '14px' }}>Backlog / To Do</h5>
-                  </div>
-                  <span className="badge rounded-pill bg-secondary bg-opacity-15 text-secondary px-2">
-                    {filteredTasks.filter(t => t.status === 'todo').length}
-                  </span>
-                </div>
-
-                <div className="d-flex flex-column gap-2.5">
-                  {filteredTasks.filter(t => t.status === 'todo').map(task => (
-                    <div key={task.id} className="card border-0 shadow-sm p-3 bg-white rounded-3 hover-card transition-all">
-                      <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
-                        <span className="badge bg-light text-secondary border uppercase px-2 py-0.5" style={{ fontSize: '10px' }}>{task.project}</span>
-                        <button className="btn p-0 border-0 bg-transparent text-muted"><MoreVertical size={14} /></button>
-                      </div>
-                      <h6 className="fw-semibold text-dark mb-3 lh-sm" style={{ fontSize: '13.5px' }}>{task.title}</h6>
-                      <div className="d-flex justify-content-between align-items-center pt-2.5 border-top border-light">
-                        <div className="d-flex align-items-center text-muted gap-1 small" style={{ fontSize: '11px' }}>
-                          <Calendar size={12} /> {task.date}
-                        </div>
+          {loadingTasks ? (
+            <div className="text-center py-5" style={{ color: textSecondary }}>
+              <Loader2 className="spin" size={24} />
+              <div className="small mt-2">Loading tasks…</div>
+            </div>
+          ) : (
+            <div className="row g-3 g-xl-4 align-items-start">
+              {columns.map(col => {
+                const colTasks = filteredTasks.filter(t => bucketOf(t.status) === col.key);
+                return (
+                  <div className="col-12 col-lg-4" key={col.key}>
+                    <div className="card border-0 p-2 rounded-3" style={{ backgroundColor: darkMode ? 'rgba(51, 65, 85, 0.35)' : '#F1F5F9' }}>
+                      <div className="d-flex justify-content-between align-items-center px-2 py-1 mb-2">
                         <div className="d-flex align-items-center gap-2">
-                          {getUrgencyBadge(task.urgency)}
-                          <div className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold text-center" style={{ width: '26px', height: '26px', fontSize: '10px', backgroundColor: '#8B5CF6' }}>
-                            {task.assignee}
-                          </div>
+                          <span className="rounded-circle" style={{ width: '8px', height: '8px', backgroundColor: col.dotColor }}></span>
+                          <h5 className="mb-0 fw-bold" style={{ fontSize: '14px', color: textPrimary }}>{col.label}</h5>
                         </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* COLUMN 2: IN PROGRESS STRATUM */}
-            <div className="col-12 col-lg-4">
-              <div className="card bg-light border-0 p-2 rounded-3">
-                <div className="d-flex justify-content-between align-items-center px-2 py-1 mb-2">
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="rounded-circle" style={{ width: '8px', height: '8px', backgroundColor: '#3B82F6' }}></span>
-                    <h5 className="mb-0 fw-bold text-dark" style={{ fontSize: '14px' }}>In Active Progress</h5>
-                  </div>
-                  <span className="badge rounded-pill bg-primary bg-opacity-15 text-primary px-2">
-                    {filteredTasks.filter(t => t.status === 'in-progress').length}
-                  </span>
-                </div>
-
-                <div className="d-flex flex-column gap-2.5">
-                  {filteredTasks.filter(t => t.status === 'in-progress').map(task => (
-                    <div key={task.id} className="card border-0 shadow-sm p-3 bg-white rounded-3 hover-card transition-all" style={{ borderLeft: `3px solid ${task.color}` }}>
-                      <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
-                        <span className="badge bg-light text-secondary border uppercase px-2 py-0.5" style={{ fontSize: '10px' }}>{task.project}</span>
-                        <button className="btn p-0 border-0 bg-transparent text-muted"><MoreVertical size={14} /></button>
-                      </div>
-                      <h6 className="fw-semibold text-dark mb-3 lh-sm" style={{ fontSize: '13.5px' }}>{task.title}</h6>
-                      <div className="d-flex justify-content-between align-items-center pt-2.5 border-top border-light">
-                        <div className="d-flex align-items-center text-muted gap-1 small" style={{ fontSize: '11px' }}>
-                          <Clock size={12} /> {task.date}
-                        </div>
-                        <div className="d-flex align-items-center gap-2">
-                          {getUrgencyBadge(task.urgency)}
-                          <div className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold text-center" style={{ width: '26px', height: '26px', fontSize: '10px', backgroundColor: '#3B82F6' }}>
-                            {task.assignee}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* COLUMN 3: COMPLETED STRATUM */}
-            <div className="col-12 col-lg-4">
-              <div className="card bg-light border-0 p-2 rounded-3">
-                <div className="d-flex justify-content-between align-items-center px-2 py-1 mb-2">
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="rounded-circle" style={{ width: '8px', height: '8px', backgroundColor: '#10B981' }}></span>
-                    <h5 className="mb-0 fw-bold text-dark" style={{ fontSize: '14px' }}>Done / Closed</h5>
-                  </div>
-                  <span className="badge rounded-pill bg-success bg-opacity-15 text-success px-2">
-                    {filteredTasks.filter(t => t.status === 'completed').length}
-                  </span>
-                </div>
-
-                <div className="d-flex flex-column gap-2.5">
-                  {filteredTasks.filter(t => t.status === 'completed').map(task => (
-                    <div key={task.id} className="card border-0 shadow-sm p-3 bg-white rounded-3 opacity-85 hover-card transition-all">
-                      <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
-                        <span className="badge bg-light text-secondary border uppercase px-2 py-0.5" style={{ fontSize: '10px' }}>{task.project}</span>
-                        <span className="text-success d-flex align-items-center gap-1 small fw-semibold" style={{ fontSize: '11px' }}>
-                          <CheckCircle2 size={12} /> Verified
+                        <span className="badge rounded-pill px-2" style={{ backgroundColor: col.tint, color: col.dotColor }}>
+                          {colTasks.length}
                         </span>
                       </div>
-                      <h6 className="fw-semibold text-muted mb-3 lh-sm text-decoration-line-through" style={{ fontSize: '13.5px' }}>{task.title}</h6>
-                      <div className="d-flex justify-content-between align-items-center pt-2.5 border-top border-light">
-                        <div className="d-flex align-items-center text-muted gap-1 small" style={{ fontSize: '11px' }}>
-                          <Calendar size={12} /> {task.date}
-                        </div>
-                        <div className="d-flex align-items-center gap-2">
-                          <div className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold text-center" style={{ width: '26px', height: '26px', fontSize: '10px', backgroundColor: '#10B981' }}>
-                            {task.assignee}
-                          </div>
-                        </div>
+                      <div className="d-flex flex-column gap-2.5">
+                        {colTasks.length === 0 ? (
+                          <div className="text-center small py-4" style={{ fontSize: '12px', color: textSecondary }}>No tasks here</div>
+                        ) : colTasks.map(renderCard)}
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
+                );
+              })}
             </div>
-
-          </div>
+          )}
         </main>
       </div>
 
+      {/* CREATE / EDIT TICKET MODAL */}
+      {showTicketModal && (
+        <div
+          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center p-3"
+          style={{ background: 'rgba(15, 23, 42, 0.55)', zIndex: 1050 }}
+          onClick={closeTicketModal}
+        >
+          <div
+            className="rounded-4 shadow-lg p-4"
+            style={{ width: '480px', maxWidth: '92vw', maxHeight: '90vh', overflowY: 'auto', backgroundColor: cardBg }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <h5 className="fw-bold mb-0" style={{ color: textPrimary }}>{editingTask ? 'Edit Task' : 'Create Ticket'}</h5>
+              <button className="btn p-0 border-0 bg-transparent" style={{ color: textSecondary }} onClick={closeTicketModal}><X size={18} /></button>
+            </div>
+
+            <form onSubmit={handleSubmitTicket}>
+              <div className="mb-3">
+                <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Title</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={form.title}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  placeholder="e.g. Fix pagination bug on Docs page"
+                  autoFocus
+                  style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }}
+                />
+              </div>
+
+              <div className="row g-2 mb-3">
+                <div className="col-6">
+                  <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Tag / Project</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={form.tag}
+                    onChange={(e) => setForm({ ...form, tag: e.target.value })}
+                    placeholder="Backend, UI/UX…"
+                    style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }}
+                  />
+                </div>
+                <div className="col-6">
+                  <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Priority</label>
+                  <select
+                    className="form-select"
+                    value={form.priority}
+                    onChange={(e) => setForm({ ...form, priority: e.target.value })}
+                    style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }}
+                  >
+                    {PRIORITY_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="row g-2 mb-3">
+                <div className="col-6">
+                  <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Assignee</label>
+                  <select
+                    className="form-select"
+                    value={form.assigneeId}
+                    onChange={(e) => setForm({ ...form, assigneeId: e.target.value })}
+                    style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }}
+                  >
+                    <option value="">Unassigned</option>
+                    {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                  </select>
+                </div>
+                <div className="col-6">
+                  <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Due date</label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={form.dueDate}
+                    onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+                    style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }}
+                  />
+                </div>
+              </div>
+
+              {editingTask && (
+                <div className="mb-3">
+                  <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Status</label>
+                  <select
+                    className="form-select"
+                    value={form.status}
+                    onChange={(e) => setForm({ ...form, status: e.target.value })}
+                    style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }}
+                  >
+                    {STATUS_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {formError && <div className="alert alert-danger py-2 px-3 small">{formError}</div>}
+
+              <div className="d-flex justify-content-end gap-2 mt-4">
+                <button type="button" className="btn border" style={{ color: textPrimary, borderColor: borderColor, backgroundColor: cardBg }} onClick={closeTicketModal} disabled={submitting}>Cancel</button>
+                <button type="submit" className="btn text-white" style={{ backgroundColor: '#3B82F6' }} disabled={submitting}>
+                  {submitting ? 'Saving…' : (editingTask ? 'Save changes' : 'Create ticket')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION */}
+      {confirmDeleteId && (
+        <div
+          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center p-3"
+          style={{ background: 'rgba(15, 23, 42, 0.55)', zIndex: 1050 }}
+          onClick={() => !deleting && setConfirmDeleteId(null)}
+        >
+          <div className="rounded-4 shadow-lg p-4" style={{ width: '360px', maxWidth: '92vw', backgroundColor: cardBg }} onClick={(e) => e.stopPropagation()}>
+            <h6 className="fw-bold mb-2" style={{ color: textPrimary }}>Delete this task?</h6>
+            <p className="small mb-4" style={{ color: textSecondary }}>This can't be undone.</p>
+            <div className="d-flex justify-content-end gap-2">
+              <button className="btn border" style={{ color: textPrimary, borderColor: borderColor, backgroundColor: cardBg }} onClick={() => setConfirmDeleteId(null)} disabled={deleting}>Cancel</button>
+              <button className="btn btn-danger" onClick={handleConfirmDelete} disabled={deleting}>
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RESPONSIVE LAYOUT & ANIMATIONS */}
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        * {
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
         #main-content-wrapper {
           margin-left: 0 !important;
+        }
+        #global-header {
+          left: 0;
         }
         @media (min-width: 992px) {
           #main-content-wrapper {
             margin-left: ${desktopCollapsed ? '70px' : '240px'} !important;
           }
+          #global-header {
+            left: ${desktopCollapsed ? '70px' : '240px'} !important;
+          }
         }
+
         .hover-card {
-          cursor: pointer;
+          cursor: default;
           border: 1px solid transparent !important;
         }
         .hover-card:hover {
           transform: translateY(-2px);
-          border-color: #E2E8F0 !important;
-          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05) !important;
+          border-color: ${borderColor} !important;
+          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
         }
         .transition-all {
           transition: all 0.2s ease-in-out;
@@ -276,6 +1087,38 @@ function TaskPage() {
         }
         .bg-opacity-10 {
           --bs-bg-opacity: 0.10;
+        }
+
+        input::placeholder {
+          color: ${textSecondary} !important;
+          opacity: 0.7;
+        }
+
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.7; }
+        }
+
+        .spin {
+          animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
+        ::-webkit-scrollbar {
+          width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+          background: ${darkMode ? '#475569' : '#cbd5e1'};
+          border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+          background: ${darkMode ? '#64748b' : '#94a3b8'};
         }
       `}</style>
     </div>

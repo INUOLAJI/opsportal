@@ -15,9 +15,7 @@ export const clearTokens = () => {
   sessionStorage.clear();
 };
 
-// Browsers can't set custom headers on a WebSocket connection, so the access
-// token rides along as a query param instead — read and validated server-side
-// by api/jwt_auth_middleware.py.
+
 export const getWebSocketUrl = () => {
   const token = getAccessToken();
   const httpBase = API_BASE_URL.replace(/\/api\/?$/, '');
@@ -29,8 +27,7 @@ async function customFetch(endpoint, options = {}) {
   const token = getAccessToken();
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers = {
-    // Let the browser set 'Content-Type: multipart/form-data; boundary=...'
-    // itself for file uploads — setting it manually breaks the boundary.
+    
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers || {}),
   };
@@ -203,6 +200,11 @@ export const activityService = {
   getAll: async () => {
     const res = await customFetch('/activity/');
     if (!res.ok) throw new Error('Failed to fetch activity logs');
+    return res.json();
+  },
+  markAllRead: async () => {
+    const res = await customFetch('/activity/mark-all-read/', { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to mark notifications as read');
     return res.json();
   },
 };

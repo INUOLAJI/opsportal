@@ -62,7 +62,9 @@ function mapTask(t) {
     status: label,
     statusColor: color,
     rawStatus: t.status,
+    priority: t.priority || 'medium',
     completionRequested: !!t.completion_requested,
+    dueDate: t.due_date || null,
   };
 }
 
@@ -75,6 +77,7 @@ function mapActivity(a) {
     time: formatRelativeTime(a.created_at),
     avatarBg: colorForString(a.user_name || a.user),
     statusColor: colorForString(a.action),
+    isRead: !!a.is_read,
   };
 }
 
@@ -104,15 +107,18 @@ export default function OperationsDashboard() {
   const [teamUsers, setTeamUsers] = useState([]);
   const [teamUsersLoading, setTeamUsersLoading] = useState(false);
   const [newTaskAssignee, setNewTaskAssignee] = useState('');
+  const [newTaskDueDate, setNewTaskDueDate] = useState('');
+  const [newTaskPriority, setNewTaskPriority] = useState('medium');
   const [requestingCompletionId, setRequestingCompletionId] = useState(null);
   const [requestCompletionError, setRequestCompletionError] = useState(null);
 
-  // Notifications / activity feed — backed by the API
+  // Notifications / activity feed — backed by the API. Read state is now
+  // real (persisted server-side via ActivityLog.read_by), not local-only.
   const [notifications, setNotifications] = useState([]);
   const [activityLoading, setActivityLoading] = useState(true);
   const [activityError, setActivityError] = useState(null);
-  const [readIds, setReadIds] = useState(() => new Set());
   const [dismissedIds, setDismissedIds] = useState(() => new Set());
+  const [markingAllRead, setMarkingAllRead] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
 
   // Profile dropdown
@@ -258,10 +264,22 @@ export default function OperationsDashboard() {
   };
 
   const visibleNotifications = notifications.filter(n => !dismissedIds.has(n.id));
-  const unreadCount = visibleNotifications.filter(n => !readIds.has(n.id)).length;
+  const unreadCount = visibleNotifications.filter(n => !n.isRead).length;
 
-  const handleMarkAllRead = () => {
-    setReadIds(new Set(visibleNotifications.map(n => n.id)));
+  const handleMarkAllRead = async () => {
+    setMarkingAllRead(true);
+    // Optimistic update so the UI feels instant; reconciled against the
+    // server response (or rolled back on failure).
+    const previous = notifications;
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    try {
+      await activityService.markAllRead();
+    } catch (err) {
+      setNotifications(previous);
+      setActivityError('Could not mark notifications as read. Please try again.');
+    } finally {
+      setMarkingAllRead(false);
+    }
   };
 
   const handleDismissNotification = (id) => {
@@ -289,13 +307,17 @@ export default function OperationsDashboard() {
         title: newTaskTitle.trim(),
         tag: newTaskTag,
         status: 'pending',
+        priority: newTaskPriority,
         assignee: Number(newTaskAssignee),
       };
+      if (newTaskDueDate) payload.due_date = newTaskDueDate;
       const created = await tasksService.create(payload);
       setTasks(prev => [mapTask(created), ...prev]);
       setNewTaskTitle('');
       setNewTaskTag('Backend');
       setNewTaskAssignee('');
+      setNewTaskDueDate('');
+      setNewTaskPriority('medium');
       setShowCreateModal(false);
     } catch (err) {
       setCreateError(err.message || 'Could not create the task. Please try again.');
@@ -342,8 +364,33 @@ export default function OperationsDashboard() {
   const taskMetrics = [
     { id: 1, label: 'Tasks Completed', value: String(tasks.filter(t => t.status === 'Complete').length), icon: <CheckCircle className="text-success" size={20} />, bgColor: 'rgba(16, 185, 129, 0.1)' },
     { id: 2, label: 'Pending Items', value: String(tasks.filter(t => t.status === 'Pending' || t.status === 'In Progress').length), icon: <Clock className="text-warning" size={20} />, bgColor: 'rgba(245, 158, 11, 0.1)' },
-    { id: 3, label: 'Urgent Alerts', value: String(tasks.filter(t => t.status === 'Overdue').length), icon: <AlertTriangle className="text-danger" size={20} />, bgColor: 'rgba(239, 68, 68, 0.1)' },
+    { id: 3, label: 'Urgent Alerts', value: String(tasks.filter(t => t.priority === 'urgent' && t.status !== 'Complete').length), icon: <AlertTriangle className="text-danger" size={20} />, bgColor: 'rgba(239, 68, 68, 0.1)' },
   ];
+
+  // Real progress data for the overview card — derived from actual tasks
+  // instead of the hardcoded "Core Deployment Phase 65%" placeholder.
+  const totalTaskCount = tasks.length;
+  const completedTaskCount = tasks.filter(t => t.status === 'Complete').length;
+  const completionPercent = totalTaskCount > 0 ? Math.round((completedTaskCount / totalTaskCount) * 100) : 0;
+  const overdueTasksList = tasks.filter(t => t.status === 'Overdue');
+  const awaitingReviewCount = tasks.filter(t => t.completionRequested && t.status !== 'Complete').length;
+
+  // Sort open (non-complete) tasks by due date — undated tasks sort last,
+  // since there's nothing to prioritize them by.
+  const byDueDate = (a, b) => {
+    if (!a.dueDate && !b.dueDate) return 0;
+    if (!a.dueDate) return 1;
+    if (!b.dueDate) return -1;
+    return new Date(a.dueDate) - new Date(b.dueDate);
+  };
+  const openTasksSorted = tasks
+    .filter(t => t.status !== 'Complete')
+    .sort(byDueDate);
+
+  // Most urgent: earliest-due overdue task if any exist, otherwise the
+  // earliest-due open task of any status.
+  const mostUrgentTask = overdueTasksList.slice().sort(byDueDate)[0] || openTasksSorted[0] || null;
+  const nextUpTask = openTasksSorted.find(t => t.id !== mostUrgentTask?.id) || null;
 
   const bgColor = darkMode ? '#0F172A' : '#F8FAFC';
   const cardBg = darkMode ? '#1E293B' : '#FFFFFF';
@@ -516,9 +563,11 @@ export default function OperationsDashboard() {
                       <span className="fw-bold small" style={{ color: textPrimary }}>Notifications</span>
                       <button
                         onClick={handleMarkAllRead}
-                        className="btn btn-link p-0 text-decoration-none"
-                        style={{ fontSize: '11px', color: '#3B82F6' }}
+                        disabled={markingAllRead || unreadCount === 0}
+                        className="btn btn-link p-0 text-decoration-none d-flex align-items-center gap-1"
+                        style={{ fontSize: '11px', color: '#3B82F6', opacity: unreadCount === 0 ? 0.5 : 1 }}
                       >
+                        {markingAllRead && <Loader2 size={12} className="spin" />}
                         Mark all read
                       </button>
                     </div>
@@ -539,7 +588,7 @@ export default function OperationsDashboard() {
                           key={n.id}
                           className="d-flex gap-2 align-items-start p-2 px-3"
                           style={{
-                            backgroundColor: readIds.has(n.id) ? 'transparent' : (darkMode ? '#1E293B' : '#EFF6FF'),
+                            backgroundColor: n.isRead ? 'transparent' : (darkMode ? '#1E293B' : '#EFF6FF'),
                             borderBottom: `1px solid ${borderColor}`
                           }}
                         >
@@ -655,7 +704,7 @@ export default function OperationsDashboard() {
               <div className="position-relative" ref={filterRef}>
                 <button
                   onClick={() => setShowFilterMenu(prev => !prev)}
-                  className="btn btn-sm border d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0"
+                  className="btn btn-sm border d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0 header-action-btn"
                   style={{
                     backgroundColor: showFilterMenu ? (darkMode ? '#334155' : '#F1F5F9') : cardBg,
                     color: textPrimary,
@@ -677,7 +726,7 @@ export default function OperationsDashboard() {
 
                 {showFilterMenu && (
                   <div
-                    className="position-absolute rounded-3 overflow-hidden"
+                    className="position-absolute rounded-3 overflow-hidden filter-dropdown-menu"
                     style={{
                       top: '42px',
                       right: 0,
@@ -708,7 +757,7 @@ export default function OperationsDashboard() {
               {isAdmin && (
                 <button
                   onClick={() => setShowCreateModal(true)}
-                  className="btn btn-sm text-white d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0"
+                  className="btn btn-sm text-white d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0 header-action-btn"
                   style={{
                     backgroundColor: '#3B82F6',
                     transition: 'all 0.15s ease'
@@ -743,7 +792,7 @@ export default function OperationsDashboard() {
             {taskMetrics.map((metric) => (
               <div key={metric.id} className="col-12 col-sm-6 col-md-4">
                 <div
-                  className="card border-0 h-100"
+                  className="card border-0 h-100 kpi-card"
                   style={{
                     backgroundColor: cardBg,
                     color: textPrimary,
@@ -760,7 +809,7 @@ export default function OperationsDashboard() {
                     e.currentTarget.style.transform = 'translateY(0)';
                   }}
                 >
-                  <div className="card-body d-flex justify-content-between align-items-start p-3 p-md-4">
+                  <div className="card-body d-flex justify-content-between align-items-start p-3 p-md-4 kpi-card-body">
                     <div>
                       <p
                         className="text-uppercase fw-bold small mb-1"
@@ -772,12 +821,12 @@ export default function OperationsDashboard() {
                       >
                         {metric.label}
                       </p>
-                      <h3 className="fw-bold mb-0" style={{ color: textPrimary, fontSize: '28px' }}>
+                      <h3 className="fw-bold mb-0 kpi-value" style={{ color: textPrimary, fontSize: '28px' }}>
                         {tasksLoading ? '—' : metric.value}
                       </h3>
                     </div>
                     <div
-                      className="rounded-3 p-2.5 d-flex align-items-center justify-content-center"
+                      className="rounded-3 p-2.5 d-flex align-items-center justify-content-center kpi-icon-wrap"
                       style={{
                         backgroundColor: metric.bgColor,
                         width: '48px',
@@ -800,7 +849,7 @@ export default function OperationsDashboard() {
 
               {/* ACTIVE PROGRESS TRACKER */}
               <div
-                className="card mb-3 mb-md-4 border-0"
+                className="card mb-3 mb-md-4 border-0 compact-card"
                 style={{
                   backgroundColor: cardBg,
                   color: textPrimary,
@@ -812,17 +861,35 @@ export default function OperationsDashboard() {
                     <h5 className="card-title fw-bold mb-0" style={{ color: textPrimary, fontSize: '15px' }}>
                       Active Process Management
                     </h5>
-                    <span
-                      className="badge fw-semibold"
-                      style={{
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        color: '#3B82F6',
-                        fontSize: '10px',
-                        padding: '4px 8px'
-                      }}
-                    >
-                      SLA Target: 98%
-                    </span>
+                    {totalTaskCount === 0 ? (
+                      <span
+                        className="badge fw-semibold"
+                        style={{ backgroundColor: 'rgba(100, 116, 139, 0.12)', color: textSecondary, fontSize: '10px', padding: '4px 8px' }}
+                      >
+                        No tasks yet
+                      </span>
+                    ) : overdueTasksList.length > 0 ? (
+                      <span
+                        className="badge fw-semibold"
+                        style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', fontSize: '10px', padding: '4px 8px' }}
+                      >
+                        {overdueTasksList.length} Overdue
+                      </span>
+                    ) : awaitingReviewCount > 0 ? (
+                      <span
+                        className="badge fw-semibold"
+                        style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', color: '#3B82F6', fontSize: '10px', padding: '4px 8px' }}
+                      >
+                        {awaitingReviewCount} Awaiting Review
+                      </span>
+                    ) : (
+                      <span
+                        className="badge fw-semibold"
+                        style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10B981', fontSize: '10px', padding: '4px 8px' }}
+                      >
+                        All Caught Up
+                      </span>
+                    )}
                   </div>
 
                   <div className="d-flex flex-column gap-3">
@@ -837,9 +904,9 @@ export default function OperationsDashboard() {
                               backgroundColor: '#3B82F6'
                             }}
                           ></span>
-                          Core Deployment Phase
+                          Task Completion
                         </span>
-                        <span className="fw-bold small ms-2 flex-shrink-0">65%</span>
+                        <span className="fw-bold small ms-2 flex-shrink-0">{completionPercent}%</span>
                       </div>
                       <div
                         className="progress rounded-pill overflow-hidden"
@@ -849,7 +916,7 @@ export default function OperationsDashboard() {
                           className="progress-bar rounded-pill"
                           role="progressbar"
                           style={{
-                            width: '65%',
+                            width: `${completionPercent}%`,
                             background: 'linear-gradient(to right, #3B82F6, #8B5CF6)',
                             transition: 'width 0.3s ease'
                           }}
@@ -860,18 +927,18 @@ export default function OperationsDashboard() {
                     <div className="row g-2 pt-2" style={{ borderTop: `1px solid ${borderColor}` }}>
                       <div className="col-6">
                         <p className="fw-bold mb-1" style={{ fontSize: '10px', color: textSecondary }}>
-                          CURRENT NODE
+                          MOST URGENT
                         </p>
                         <p className="fw-semibold mb-0 text-truncate" style={{ fontSize: '13px', color: textPrimary }}>
-                          High-Fidelity Design Review
+                          {mostUrgentTask ? mostUrgentTask.title : 'Nothing urgent'}
                         </p>
                       </div>
                       <div className="col-6">
                         <p className="fw-bold mb-1" style={{ fontSize: '10px', color: textSecondary }}>
-                          NEXT ASSIGNMENT
+                          NEXT UP
                         </p>
                         <p className="fw-semibold mb-0 text-truncate" style={{ fontSize: '13px', color: textPrimary }}>
-                          Automated QA
+                          {nextUpTask ? nextUpTask.title : 'Nothing scheduled'}
                         </p>
                       </div>
                     </div>
@@ -882,7 +949,7 @@ export default function OperationsDashboard() {
               {/* HIGH PRIORITY TASK QUEUE */}
               <div
                 ref={queueRef}
-                className="card border-0 overflow-hidden"
+                className="card border-0 overflow-hidden compact-card"
                 style={{
                   backgroundColor: cardBg,
                   color: textPrimary,
@@ -940,6 +1007,7 @@ export default function OperationsDashboard() {
                       status={t.status}
                       statusColor={t.statusColor}
                       borderLeftColor={t.statusColor}
+                      priority={t.priority}
                       completionRequested={t.completionRequested}
                       darkMode={darkMode}
                       textPrimary={textPrimary}
@@ -956,7 +1024,7 @@ export default function OperationsDashboard() {
             {/* RIGHT GRID PANELS */}
             <div className="col-12 col-lg-4">
               <div
-                className="card border-0 h-100"
+                className="card border-0 h-100 compact-card"
                 style={{
                   backgroundColor: cardBg,
                   color: textPrimary,
@@ -1144,10 +1212,42 @@ export default function OperationsDashboard() {
                   <option>Infrastructure</option>
                 </select>
               </div>
+              <div className="mb-4">
+                <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Priority</label>
+                <select
+                  value={newTaskPriority}
+                  onChange={(e) => setNewTaskPriority(e.target.value)}
+                  className="form-select"
+                  disabled={creatingTask}
+                  style={{ backgroundColor: darkMode ? '#334155' : '#F8FAFC', color: textPrimary, border: `1px solid ${borderColor}` }}
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+                <p className="small mt-1 mb-0" style={{ color: textSecondary, fontSize: '11px' }}>
+                  Urgent tasks count toward the "Urgent Alerts" card on the assignee's dashboard.
+                </p>
+              </div>
+              <div className="mb-4">
+                <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Due date (optional)</label>
+                <input
+                  type="date"
+                  value={newTaskDueDate}
+                  onChange={(e) => setNewTaskDueDate(e.target.value)}
+                  className="form-control"
+                  disabled={creatingTask}
+                  style={{ backgroundColor: darkMode ? '#334155' : '#F8FAFC', color: textPrimary, border: `1px solid ${borderColor}` }}
+                />
+                <p className="small mt-1 mb-0" style={{ color: textSecondary, fontSize: '11px' }}>
+                  Used to determine what shows as "Most Urgent" and "Next Up" on the dashboard.
+                </p>
+              </div>
               <div className="d-flex gap-2 justify-content-end">
                 <button
                   type="button"
-                  onClick={() => { setShowCreateModal(false); setNewTaskAssignee(''); }}
+                  onClick={() => { setShowCreateModal(false); setNewTaskAssignee(''); setNewTaskDueDate(''); setNewTaskPriority('medium'); }}
                   className="btn btn-sm border"
                   disabled={creatingTask}
                   style={{ color: textPrimary, borderColor: borderColor, backgroundColor: cardBg }}
@@ -1211,6 +1311,14 @@ export default function OperationsDashboard() {
             </div>
             <p className="small mb-3" style={{ color: textSecondary }}>
               Assigned to <span className="fw-bold" style={{ color: textPrimary }}>{selectedTask.assigneeInitials}</span>
+              {selectedTask.dueDate && (
+                <>
+                  {' · Due '}
+                  <span className="fw-bold" style={{ color: textPrimary }}>
+                    {new Date(selectedTask.dueDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                  </span>
+                </>
+              )}
             </p>
             {requestCompletionError && (
               <div className="alert alert-danger py-2 px-3 small mb-3">{requestCompletionError}</div>
@@ -1276,6 +1384,54 @@ export default function OperationsDashboard() {
           }
           #global-header {
             left: ${desktopCollapsed ? '70px' : '240px'} !important;
+          }
+        }
+
+        /* Moderate/compact sizing on mobile — header buttons, KPI cards,
+           the three main content cards, and the filter dropdown all felt
+           oversized on small screens, so trim them down under 576px. */
+        @media (max-width: 575.98px) {
+          .header-action-btn {
+            font-size: 12px !important;
+            padding: 6px 10px !important;
+            gap: 6px !important;
+          }
+          .header-action-btn svg {
+            width: 12px !important;
+            height: 12px !important;
+          }
+
+          .filter-dropdown-menu {
+            width: 150px !important;
+          }
+          .filter-dropdown-menu button {
+            font-size: 12px !important;
+            padding: 6px 10px !important;
+          }
+
+          .kpi-card-body {
+            padding: 12px !important;
+          }
+          .kpi-value {
+            font-size: 20px !important;
+          }
+          .kpi-icon-wrap {
+            width: 36px !important;
+            height: 36px !important;
+          }
+          .kpi-icon-wrap svg {
+            width: 16px !important;
+            height: 16px !important;
+          }
+
+          .compact-card .card-body {
+            padding: 12px !important;
+          }
+          .compact-card .card-header {
+            padding: 10px 12px !important;
+          }
+          .compact-card .card-title {
+            font-size: 13px !important;
           }
         }
 
