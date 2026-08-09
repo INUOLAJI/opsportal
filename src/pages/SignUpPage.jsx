@@ -73,12 +73,12 @@ function SignUpPage() {
         <div className="col-12 col-lg-6 d-flex align-items-center justify-content-center p-4 p-sm-5 bg-white">
           <div className="w-100 position-relative" style={{ maxWidth: '400px' }}>
 
-            <Link
+            {/* <Link
               to="/"
               className="d-inline-flex align-items-center gap-2 text-decoration-none text-muted small mb-4 hover-dark transition-all"
             >
               <ArrowLeft size={16} /> Back to dashboard
-            </Link>
+            </Link> */}
 
             <div className="mb-4">
               <h2 className="fw-bold text-dark mb-1" style={{ color: '#0F172A' }}>Create Account</h2>
