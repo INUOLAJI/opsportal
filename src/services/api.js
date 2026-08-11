@@ -15,7 +15,9 @@ export const clearTokens = () => {
   sessionStorage.clear();
 };
 
-
+// Browsers can't set custom headers on a WebSocket connection, so the access
+// token rides along as a query param instead — read and validated server-side
+// by api/jwt_auth_middleware.py.
 export const getWebSocketUrl = () => {
   const token = getAccessToken();
   const httpBase = API_BASE_URL.replace(/\/api\/?$/, '');
@@ -27,7 +29,8 @@ async function customFetch(endpoint, options = {}) {
   const token = getAccessToken();
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers = {
-    
+    // Let the browser set 'Content-Type: multipart/form-data; boundary=...'
+    // itself for file uploads — setting it manually breaks the boundary.
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers || {}),
   };
@@ -214,6 +217,36 @@ export const usersService = {
   getAll: async () => {
     const res = await customFetch('/users/');
     if (!res.ok) throw new Error('Failed to fetch team users');
+    return res.json();
+  },
+};
+
+// Platform Settings API Service — a single global row; PATCH and rotate-secret
+// are admin-only server-side (403 for staff), so the frontend just treats
+// the form as read-only for non-admins rather than hiding it.
+export const settingsService = {
+  get: async () => {
+    const res = await customFetch('/settings/');
+    if (!res.ok) throw new Error('Failed to fetch settings');
+    return res.json();
+  },
+  update: async (patch) => {
+    const res = await customFetch('/settings/', {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to update settings');
+    }
+    return res.json();
+  },
+  rotateSecret: async () => {
+    const res = await customFetch('/settings/rotate-secret/', { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to rotate the secret key');
+    }
     return res.json();
   },
 };
