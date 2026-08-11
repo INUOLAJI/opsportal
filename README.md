@@ -66,12 +66,12 @@ UX:
 
 | Variable | Default | Notes |
 |---|---|---|
-| `VITE_API_BASE_URL` | `http://127.0.0.1:8000/api` | REST API base; the WS URL is derived from this (swaps `http`→`ws`, strips `/api`) |
+| `VITE_API_BASE_URL` | `https://opsportal-backend-n1jf.onrender.com/api` | REST API base; the WS URL is derived from this (swaps `http`→`ws`, strips `/api`) |
 
 Create a `.env` (or `.env.local`) in the project root:
 
 ```
-VITE_API_BASE_URL=http://127.0.0.1:8000/api
+VITE_API_BASE_URL=https://opsportal-backend-n1jf.onrender.com/api
 ```
 
 ## Local setup
