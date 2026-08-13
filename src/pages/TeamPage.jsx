@@ -83,11 +83,7 @@ function TeamPage() {
     try {
       const data = await usersService.getAll();
       const list = Array.isArray(data) ? data : (data?.results || []);
-      // Removed staff are soft-deleted (is_active=False) rather than
-      // actually deleted, so the API still returns them — filter them out
-      // here so a removal sticks across reloads instead of only lasting
-      // until the next fetch.
-      setTeamMembers(list.map(mapMember).filter(m => m.isActive));
+      setTeamMembers(list.map(mapMember));
     } catch (err) {
       setLoadError('Could not load the team directory. Check your connection and try again.');
     } finally {
@@ -664,8 +660,8 @@ function TeamPage() {
               </button>
             </div>
             <p className="small mb-3" style={{ color: textSecondary }}>
-              They'll immediately lose access to the portal — this ends any active session and blocks future sign-ins.
-              Their task, document, and activity history stays intact.
+              This permanently deletes their account, including every document they uploaded and their
+              activity history. This can't be undone.
             </p>
             {removeError && <div className="alert alert-danger py-2 px-3 small mb-3">{removeError}</div>}
             <div className="d-flex gap-2 justify-content-end">
@@ -683,7 +679,7 @@ function TeamPage() {
                 disabled={removing}
               >
                 {removing && <Loader2 size={14} className="spin" />}
-                {removing ? 'Removing...' : 'Remove staff member'}
+                {removing ? 'Deleting...' : 'Permanently delete'}
               </button>
             </div>
           </div>

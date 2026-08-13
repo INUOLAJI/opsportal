@@ -263,9 +263,8 @@ export const usersService = {
     if (!res.ok) throw new Error('Failed to fetch team users');
     return res.json();
   },
-  // Admin-only. The backend deactivates rather than hard-deletes the row
-  // (so the person's task/document/activity history is preserved) — the
-  // effect is the same: they can no longer sign in or use any existing session.
+  // Admin-only. Permanently deletes the account and everything tied to
+  // it (their uploaded documents, activity log) — irreversible.
   remove: async (id) => {
     const res = await customFetch(`/users/${id}/`, { method: 'DELETE' });
     if (!res.ok) {
