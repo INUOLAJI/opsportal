@@ -9,10 +9,14 @@ function SignUpPage() {
   const { signup, loading } = useAuth();
 
   const [showPassword, setShowPassword] = useState(false);
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [companyName, setCompanyName] = useState('');
+  const [companyPhone, setCompanyPhone] = useState('');
+  const [companyAddress, setCompanyAddress] = useState('');
+  const [adminName, setAdminName] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('staff');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -25,10 +29,20 @@ function SignUpPage() {
       return;
     }
 
-    const result = await signup(fullName, email, password, role);
+    if (password !== confirmPassword) {
+      setErrorMessage('Passwords do not match.');
+      return;
+    }
+
+    // Company registration with admin user
+    const result = await signup(adminName, adminEmail, password, 'admin', {
+      company_name: companyName,
+      company_phone: companyPhone,
+      company_address: companyAddress,
+    });
     if (result.success) {
       navigate('/signin', {
-        state: { message: 'Account created successfully! Please sign in.' }
+        state: { message: 'Company registered successfully! Please sign in.' }
       });
     } else {
       setErrorMessage(result.error);
@@ -78,8 +92,8 @@ function SignUpPage() {
                 <span className="fw-bold tracking-wide style-logo text-white">OpsPortal</span>
               </div>
               <div>
-                <p className="small text-uppercase fw-semibold mb-2" style={{ letterSpacing: '0.12em', color: 'rgba(255,255,255,0.75)' }}>Create access</p>
-                <h2 className="fw-bold mb-1" style={{ color: '#fff', fontSize: '28px' }}>Set up your account</h2>
+                <p className="small text-uppercase fw-semibold mb-2" style={{ letterSpacing: '0.12em', color: 'rgba(255,255,255,0.75)' }}>Company Setup</p>
+                <h2 className="fw-bold mb-1" style={{ color: '#fff', fontSize: '28px' }}>Register your company</h2>
               </div>
             </div>
 
@@ -91,9 +105,9 @@ function SignUpPage() {
             </Link> */}
 
             <div className="mb-4">
-              <h2 className="fw-bold text-dark mb-1" style={{ color: '#0F172A' }}>Create Account</h2>
+              <h2 className="fw-bold text-dark mb-1" style={{ color: '#0F172A' }}>Register Company</h2>
               <p className="text-muted small">
-                Register a new profile credential slot to access the system platform.
+                Set up your company account and become the administrator. You'll be able to invite staff members to your workspace.
               </p>
             </div>
 
@@ -107,61 +121,76 @@ function SignUpPage() {
             <form onSubmit={handleSubmit} className="d-flex flex-column gap-3">
 
               <div>
-                <label className="form-label small fw-bold text-secondary mb-2">Target Workspace Role</label>
-                <div className="d-flex p-1 bg-light rounded-3 border border-light">
-                  <button
-                    type="button"
-                    onClick={() => setRole('staff')}
-                    className={`btn btn-sm flex-grow-1 py-2 rounded-2 d-flex align-items-center justify-content-center gap-2 border-0 shadow-none transition-all ${
-                      role === 'staff'
-                        ? 'bg-white text-dark fw-bold shadow-sm'
-                        : 'text-secondary bg-transparent'
-                    }`}
-                  >
-                    <User size={16} />
-                    Staff Member
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRole('admin')}
-                    className={`btn btn-sm flex-grow-1 py-2 rounded-2 d-flex align-items-center justify-content-center gap-2 border-0 shadow-none transition-all ${
-                      role === 'admin'
-                        ? 'bg-white text-dark fw-bold shadow-sm'
-                        : 'text-secondary bg-transparent'
-                    }`}
-                  >
-                    <ShieldAlert size={16} />
-                    Administrator
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="form-label small fw-bold text-secondary mb-1">Full Legal Name</label>
+                <label className="form-label small fw-bold text-secondary mb-1">Company Name</label>
                 <div className="position-relative">
                   <Briefcase className="position-absolute text-muted opacity-50" size={18} style={{ left: '12px', top: '12px' }} />
                   <input
                     type="text"
                     required
-                    placeholder="e.g. John Doe"
+                    placeholder="e.g. Tech Solutions Inc."
                     className="form-control border bg-light ps-5 py-2.5 rounded-3 shadow-none custom-input"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
                   />
                 </div>
               </div>
 
               <div>
-                <label className="form-label small fw-bold text-secondary mb-1">Corporate Email Address</label>
+                <label className="form-label small fw-bold text-secondary mb-1">Company Phone</label>
+                <div className="position-relative">
+                  <Briefcase className="position-absolute text-muted opacity-50" size={18} style={{ left: '12px', top: '12px' }} />
+                  <input
+                    type="tel"
+                    placeholder="+1 (555) 123-4567"
+                    className="form-control border bg-light ps-5 py-2.5 rounded-3 shadow-none custom-input"
+                    value={companyPhone}
+                    onChange={(e) => setCompanyPhone(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="form-label small fw-bold text-secondary mb-1">Company Address</label>
+                <div className="position-relative">
+                  <Briefcase className="position-absolute text-muted opacity-50" size={18} style={{ left: '12px', top: '12px' }} />
+                  <input
+                    type="text"
+                    placeholder="123 Business St, City, State"
+                    className="form-control border bg-light ps-5 py-2.5 rounded-3 shadow-none custom-input"
+                    value={companyAddress}
+                    onChange={(e) => setCompanyAddress(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <hr className="my-2 opacity-25" />
+
+              <div>
+                <label className="form-label small fw-bold text-secondary mb-1">Administrator Name</label>
+                <div className="position-relative">
+                  <User className="position-absolute text-muted opacity-50" size={18} style={{ left: '12px', top: '12px' }} />
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. John Doe"
+                    className="form-control border bg-light ps-5 py-2.5 rounded-3 shadow-none custom-input"
+                    value={adminName}
+                    onChange={(e) => setAdminName(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="form-label small fw-bold text-secondary mb-1">Administrator Email</label>
                 <div className="position-relative">
                   <Mail className="position-absolute text-muted opacity-50" size={18} style={{ left: '12px', top: '12px' }} />
                   <input
                     type="email"
                     required
-                    placeholder="name@company.com"
+                    placeholder="admin@company.com"
                     className="form-control border bg-light ps-5 py-2.5 rounded-3 shadow-none custom-input"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
                   />
                 </div>
               </div>
@@ -189,6 +218,32 @@ function SignUpPage() {
                 </div>
               </div>
 
+              <div>
+                <label className="form-label small fw-bold text-secondary mb-1">Confirm Password</label>
+                <div className="position-relative">
+                  <Lock className="position-absolute text-muted opacity-50" size={18} style={{ left: '12px', top: '12px' }} />
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    required
+                    minLength={8}
+                    placeholder="Re-enter your password"
+                    className={`form-control border bg-light ps-5 pe-5 py-2.5 rounded-3 shadow-none custom-input ${confirmPassword && password !== confirmPassword ? 'is-invalid' : ''}`}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="btn position-absolute top-0 end-0 h-100 text-muted px-3 border-0 d-flex align-items-center shadow-none bg-transparent"
+                  >
+                    {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                {confirmPassword && password !== confirmPassword && (
+                  <div className="small text-danger mt-1">Passwords do not match.</div>
+                )}
+              </div>
+
               <div className="d-flex justify-content-between align-items-center py-1">
                 <div className="form-check">
                   <input
@@ -214,10 +269,10 @@ function SignUpPage() {
                 {loading ? (
                   <>
                     <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                    Registering Profile...
+                    Setting Up...
                   </>
                 ) : (
-                  'Create Corporate Account'
+                  'Register Company'
                 )}
               </button>
             </form>

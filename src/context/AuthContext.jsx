@@ -44,10 +44,10 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const signup = async (full_name, email, password, role) => {
+  const signup = async (full_name, email, password, role, companyData = {}) => {
     setLoading(true);
     try {
-      const data = await authService.signUp(full_name, email, password, role);
+      const data = await authService.signUp(full_name, email, password, role, companyData);
       return { success: true, data };
     } catch (error) {
       const message = error.response?.data?.email?.[0] || 

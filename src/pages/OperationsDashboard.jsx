@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   CheckCircle, Clock, AlertTriangle, ArrowRight, Plus, Filter, Menu, Bell,
   Search, Moon, Sun, MessageSquare, X, ChevronDown, LogOut, Check, Loader2
@@ -82,6 +83,7 @@ function mapActivity(a) {
 }
 
 export default function OperationsDashboard() {
+  const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
@@ -249,21 +251,26 @@ export default function OperationsDashboard() {
     setTeamUsersLoading(true);
     try {
       const data = await usersService.getAll();
-      const list = Array.isArray(data) ? data : (data?.results || []);
+      let list = Array.isArray(data) ? data : (data?.results || []);
+      
+      // Filter users to only show those from the same company
+      if (user?.company_id) {
+        list = list.filter(u => u.company_id === user.company_id);
+      }
+      
       setTeamUsers(list);
     } catch (err) {
       setTeamUsers([]);
     } finally {
       setTeamUsersLoading(false);
     }
-  }, []);
+  }, [user?.company_id]);
 
   useEffect(() => {
     if (isAdmin && showCreateModal && teamUsers.length === 0 && !teamUsersLoading) {
       loadTeamUsers();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, showCreateModal]);
+  }, [isAdmin, showCreateModal, teamUsers.length, teamUsersLoading, loadTeamUsers]);
 
   const handleToggleSidebar = () => {
     if (window.innerWidth < 992) {
@@ -772,7 +779,7 @@ export default function OperationsDashboard() {
 
               {isAdmin && (
                 <button
-                  onClick={() => setShowCreateModal(true)}
+                  onClick={() => navigate('/task', { state: { openCreateModal: true } })}
                   className="btn btn-sm text-white d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0 header-action-btn"
                   style={{
                     backgroundColor: '#3B82F6',

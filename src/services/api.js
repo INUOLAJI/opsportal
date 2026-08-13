@@ -105,11 +105,19 @@ export const authService = {
     return data;
   },
 
-  signUp: async (full_name, email, password, role) => {
+  signUp: async (full_name, email, password, role, companyData = {}) => {
     const response = await fetch(`${API_BASE_URL}/auth/signup/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ full_name, email, password, role }),
+      body: JSON.stringify({ 
+        full_name, 
+        email, 
+        password, 
+        role,
+        company_name: companyData.company_name,
+        company_phone: companyData.company_phone,
+        company_address: companyData.company_address,
+      }),
     });
 
     const data = await response.json();

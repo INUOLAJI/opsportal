@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Plus, Filter, Search, MoreVertical, Calendar, CheckCircle2, Clock,
   AlertTriangle, X, Trash2, Pencil, Send, Loader2,
@@ -109,8 +110,18 @@ function bucketOf(status) {
 }
 
 function TaskPage() {
+  const location = useLocation();
   const { user, logout } = useAuth();
   const isAdmin = user?.role === 'admin';
+
+  // Auto-open create modal if passed from dashboard
+  useEffect(() => {
+    if (location.state?.openCreateModal) {
+      setShowTicketModal(true);
+      // Clean up the state to prevent re-opening on back/forward
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
@@ -220,12 +231,19 @@ function TaskPage() {
     (async () => {
       try {
         const data = await usersService.getAll();
-        setUsers(Array.isArray(data) ? data : (data?.results || []));
+        let allUsers = Array.isArray(data) ? data : (data?.results || []);
+        
+        // Filter users to only show those from the same company
+        if (user?.company_id) {
+          allUsers = allUsers.filter(u => u.company_id === user.company_id);
+        }
+        
+        setUsers(allUsers);
       } catch (err) {
         // Non-fatal — the assignee dropdown just falls back to unassigned.
       }
     })();
-  }, [isAdmin]);
+  }, [isAdmin, user?.company_id]);
 
   // Real-time updates over WebSocket — new/updated tasks and activity land
   // without a manual refresh. Reconnects automatically if the connection drops.

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Lock, Mail, ArrowLeft, ShieldAlert, User, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -16,14 +16,14 @@ function SignInPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
-  const [role, setRole] = useState('staff');
   const [errorMessage, setErrorMessage] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage('');
 
-    const result = await login(email, password, role, rememberMe);
+    // Backend determines user role from database
+    const result = await login(email, password, 'admin', rememberMe);
     if (result.success) {
       navigate('/dashboard', { replace: true });
     } else {
@@ -87,7 +87,7 @@ function SignInPage() {
             <div className="mb-4">
               <h2 className="fw-bold text-dark mb-1" style={{ color: '#0F172A' }}>Welcome Back</h2>
               <p className="text-muted small">
-                Provide your {role === 'admin' ? 'administrative' : 'workspace'} credentials to log in.
+                Sign in to your company account to access the operations portal.
               </p>
             </div>
 
@@ -108,43 +108,13 @@ function SignInPage() {
             <form onSubmit={handleSubmit} className="d-flex flex-column gap-3">
 
               <div>
-                <label className="form-label small fw-bold text-secondary mb-2">Account Portal Type</label>
-                <div className="d-flex p-1 bg-light rounded-3 border border-light">
-                  <button
-                    type="button"
-                    onClick={() => setRole('staff')}
-                    className={`btn btn-sm flex-grow-1 py-2 rounded-2 d-flex align-items-center justify-content-center gap-2 border-0 shadow-none transition-all ${
-                      role === 'staff'
-                        ? 'bg-white text-dark fw-bold shadow-sm'
-                        : 'text-secondary bg-transparent'
-                    }`}
-                  >
-                    <User size={16} />
-                    Staff Member
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRole('admin')}
-                    className={`btn btn-sm flex-grow-1 py-2 rounded-2 d-flex align-items-center justify-content-center gap-2 border-0 shadow-none transition-all ${
-                      role === 'admin'
-                        ? 'bg-white text-dark fw-bold shadow-sm'
-                        : 'text-secondary bg-transparent'
-                    }`}
-                  >
-                    <ShieldAlert size={16} />
-                    Administrator
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="form-label small fw-bold text-secondary mb-1">Corporate Email</label>
+                <label className="form-label small fw-bold text-secondary mb-1">Email Address</label>
                 <div className="position-relative">
                   <Mail className="position-absolute text-muted opacity-50" size={18} style={{ left: '12px', top: '12px' }} />
                   <input
                     type="email"
                     required
-                    placeholder="name@company.com"
+                    placeholder="admin@company.com"
                     className="form-control border bg-light ps-5 py-2.5 rounded-3 shadow-none custom-input"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -210,9 +180,9 @@ function SignInPage() {
 
             <div className="text-center mt-4 pt-2 border-top border-light">
               <p className="small text-muted mb-0">
-                New to the platform?{' '}
+                New to OpsPortal?{' '}
                 <Link to="/signup" className="text-decoration-none fw-bold text-primary-link">
-                  Register standard account
+                  Register your company
                 </Link>
               </p>
             </div>
