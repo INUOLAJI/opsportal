@@ -263,6 +263,17 @@ export const usersService = {
     if (!res.ok) throw new Error('Failed to fetch team users');
     return res.json();
   },
+  // Admin-only. The backend deactivates rather than hard-deletes the row
+  // (so the person's task/document/activity history is preserved) — the
+  // effect is the same: they can no longer sign in or use any existing session.
+  remove: async (id) => {
+    const res = await customFetch(`/users/${id}/`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to remove team member');
+    }
+    return true;
+  },
 };
 
 // Platform Settings API Service — a single global row; PATCH and rotate-secret

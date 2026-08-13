@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Mail, Calendar, Shield, Plus, Search, Filter,
-  Menu, Bell, Moon, Sun, X, Loader2, Check
+  Menu, Bell, Moon, Sun, X, Loader2, Check, Trash2, AlertTriangle
 } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import { useAuth } from '../context/AuthContext';
@@ -65,6 +65,10 @@ function TeamPage() {
   const [inviteRole, setInviteRole] = useState('staff');
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState(null);
+
+  const [removeTarget, setRemoveTarget] = useState(null); // the member object pending confirmation
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState(null);
 
   const userInitials = user?.full_name
     ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -149,6 +153,21 @@ function TeamPage() {
       setInviteError(message);
     } finally {
       setInviting(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    if (!removeTarget) return;
+    setRemoving(true);
+    setRemoveError(null);
+    try {
+      await usersService.remove(removeTarget.id);
+      setTeamMembers(prev => prev.filter(m => m.id !== removeTarget.id));
+      setRemoveTarget(null);
+    } catch (err) {
+      setRemoveError(err.message || 'Could not remove this team member. Please try again.');
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -457,6 +476,22 @@ function TeamPage() {
                   >
                     <div className="card-body p-4 d-flex flex-column h-100">
 
+                      {/* Remove (admin only, not for your own account) */}
+                      {isAdmin && member.id !== user?.id && (
+                        <button
+                          type="button"
+                          onClick={() => { setRemoveTarget(member); setRemoveError(null); }}
+                          className="btn btn-sm border-0 p-1 rounded-2 position-absolute"
+                          style={{ top: '12px', right: '12px', color: textSecondary, backgroundColor: 'transparent', lineHeight: 0 }}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = '#EF4444'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = textSecondary; }}
+                          title="Remove staff member"
+                          aria-label={`Remove ${member.name}`}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+
                       {/* User Header */}
                       <div className="d-flex align-items-center gap-3 mb-4 pb-4" style={{ borderBottom: `1px solid ${borderColor}` }}>
                         <div
@@ -599,6 +634,54 @@ function TeamPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* REMOVE STAFF CONFIRMATION MODAL (admin only) */}
+      {isAdmin && removeTarget && (
+        <div
+          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center p-3"
+          style={{ backgroundColor: 'rgba(15, 23, 42, 0.55)', zIndex: 1050 }}
+          onClick={() => !removing && setRemoveTarget(null)}
+        >
+          <div
+            className="rounded-4 p-4 w-100"
+            style={{ maxWidth: '420px', backgroundColor: cardBg, boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <h5 className="fw-bold mb-0 d-flex align-items-center gap-2" style={{ color: textPrimary }}>
+                <AlertTriangle size={18} style={{ color: '#EF4444' }} />
+                Remove {removeTarget.name}?
+              </h5>
+              <button className="btn btn-link p-0" style={{ color: textSecondary }} onClick={() => setRemoveTarget(null)} disabled={removing} aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
+            <p className="small mb-3" style={{ color: textSecondary }}>
+              They'll immediately lose access to the portal — this ends any active session and blocks future sign-ins.
+              Their task, document, and activity history stays intact.
+            </p>
+            {removeError && <div className="alert alert-danger py-2 px-3 small mb-3">{removeError}</div>}
+            <div className="d-flex gap-2 justify-content-end">
+              <button
+                type="button" onClick={() => setRemoveTarget(null)}
+                className="btn btn-sm border" disabled={removing}
+                style={{ color: textPrimary, borderColor: borderColor, backgroundColor: cardBg }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button" onClick={handleRemove}
+                className="btn btn-sm text-white d-flex align-items-center gap-2"
+                style={{ backgroundColor: '#EF4444' }}
+                disabled={removing}
+              >
+                {removing && <Loader2 size={14} className="spin" />}
+                {removing ? 'Removing...' : 'Remove staff member'}
+              </button>
+            </div>
           </div>
         </div>
       )}
