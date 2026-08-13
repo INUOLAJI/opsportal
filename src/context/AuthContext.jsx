@@ -38,7 +38,10 @@ export function AuthProvider({ children }) {
       const message = error.response?.data?.detail || 
                       error.response?.data?.non_field_errors?.[0] || 
                       'Authentication failed. Please check your credentials.';
-      return { success: false, error: message };
+      // 'email_not_verified' lets the sign-in page offer a resend link
+      // instead of just showing the generic error text.
+      const code = error.response?.data?.code || null;
+      return { success: false, error: message, code };
     } finally {
       setLoading(false);
     }

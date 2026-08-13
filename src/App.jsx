@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import OperationsDashboard from './pages/OperationsDashboard';
 import SignInPage from './pages/SignInPage';
 import SignUpPage from './pages/SignUpPage';
+import VerifyEmailPage from './pages/VerifyEmailPage';
 import TaskPage from './pages/TaskPage';
 import TeamPage from './pages/TeamPage';
 import AnalyticsPage from './pages/AnalyticsPage';
@@ -50,6 +51,7 @@ function AppRoutes() {
       <Route path='/' element={<SignInPage />} />
       <Route path='/signin' element={<SignInPage />} />
       <Route path='/signup' element={<SignUpPage />} />
+      <Route path='/verify-email' element={<VerifyEmailPage />} />
 
       {/* Protected Dashboard Routes */}
       <Route 

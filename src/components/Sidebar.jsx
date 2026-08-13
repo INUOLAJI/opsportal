@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, FileText, Users, BarChart3, Settings, 
-  LogOut, X, Moon, Sun, ListTodo 
+  LogOut, X, Moon, Sun, ListTodo, UserPlus 
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -16,6 +16,7 @@ export default function Sidebar({
   const location = useLocation();
   const navigate = useNavigate();
   const { logout, user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.is_superuser;
 
   const toggleDarkMode = () => {
     onDarkModeChange(!darkMode);
@@ -24,6 +25,12 @@ export default function Sidebar({
   const handleLogout = () => {
     logout();
     navigate('/signin');
+  };
+
+  const handleAddStaff = () => {
+    // TeamPage reads this to auto-open its "Invite Member" modal on load.
+    navigate('/team', { state: { openInvite: true } });
+    if (mobileOpen) setMobileOpen(false);
   };
 
   // Color system derived directly from props
@@ -153,6 +160,35 @@ export default function Sidebar({
               <div className="fw-bold text-truncate" style={{ fontSize: '12px' }}>{user.full_name}</div>
               <div className="text-muted text-truncate" style={{ fontSize: '11px' }}>{user.email} ({user.role})</div>
             </div>
+          )}
+
+          {/* Add Staff (admin only) */}
+          {isAdmin && (
+            <button
+              onClick={handleAddStaff}
+              className="btn w-100 d-flex align-items-center gap-2 rounded-2 border-0"
+              style={{
+                backgroundColor: sidebarHover,
+                color: sidebarText,
+                padding: '10px 12px',
+                transition: 'all 0.15s ease',
+                justifyContent: desktopCollapsed ? 'center' : 'flex-start',
+                fontSize: '13px',
+                fontWeight: 500
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = sidebarActive;
+                e.currentTarget.style.color = '#FFFFFF';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = sidebarHover;
+                e.currentTarget.style.color = sidebarText;
+              }}
+              title={desktopCollapsed ? 'Add Staff' : ''}
+            >
+              <UserPlus size={18} />
+              {!desktopCollapsed && <span>Add Staff</span>}
+            </button>
           )}
 
           {/* Dark Mode Toggle */}

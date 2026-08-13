@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Eye, EyeOff, Lock, Mail, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { authService } from '../services/api';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 function SignInPage() {
@@ -17,17 +18,34 @@ function SignInPage() {
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [resendState, setResendState] = useState('idle'); // 'idle' | 'sending' | 'sent'
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage('');
+    setNeedsVerification(false);
+    setResendState('idle');
 
     // Backend determines user role from database
     const result = await login(email, password, 'admin', rememberMe);
     if (result.success) {
-      navigate('/dashboard', { replace: true });
+      navigate(targetPath, { replace: true });
     } else {
       setErrorMessage(result.error);
+      if (result.code === 'email_not_verified') {
+        setNeedsVerification(true);
+      }
+    }
+  };
+
+  const handleResend = async () => {
+    if (!email) return;
+    setResendState('sending');
+    try {
+      await authService.resendVerification(email);
+    } finally {
+      setResendState('sent');
     }
   };
 
@@ -102,6 +120,24 @@ function SignInPage() {
               <div className="alert alert-danger d-flex align-items-center gap-2 py-2 px-3 small rounded-3 mb-3" role="alert">
                 <AlertCircle size={18} className="flex-shrink-0" />
                 <div>{errorMessage}</div>
+              </div>
+            )}
+
+            {needsVerification && (
+              <div className="small mb-3">
+                {resendState === 'sent' ? (
+                  <span className="text-success">Verification email sent — check your inbox.</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleResend}
+                    disabled={resendState === 'sending' || !email}
+                    className="btn btn-link p-0 text-primary-link fw-medium"
+                    style={{ fontSize: '13px' }}
+                  >
+                    {resendState === 'sending' ? 'Sending...' : 'Resend verification email'}
+                  </button>
+                )}
               </div>
             )}
 

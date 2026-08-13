@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Mail, Calendar, Shield, Plus, Search, Filter,
   Menu, Bell, Moon, Sun, X, Loader2, Check
@@ -30,6 +31,7 @@ function mapMember(u) {
       : (u.email ? u.email[0].toUpperCase() : '?'),
     color: u.role === 'admin' ? '#8B5CF6' : '#3B82F6',
     isActive: u.is_active !== false, // default true unless explicitly false
+    isVerified: u.is_verified !== false, // default true unless explicitly false (admins always true)
     joined: formatJoinedDate(u.date_joined),
   };
 }
@@ -37,6 +39,8 @@ function mapMember(u) {
 function TeamPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
@@ -86,6 +90,15 @@ function TeamPage() {
   useEffect(() => {
     loadTeam();
   }, [loadTeam]);
+
+  // Opened via the sidebar's "Add Staff" shortcut — jump straight into the
+  // invite flow, then clear the state so a refresh/back-nav doesn't reopen it.
+  useEffect(() => {
+    if (isAdmin && location.state?.openInvite) {
+      setShowInviteModal(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [isAdmin, location.state, location.pathname, navigate]);
 
   useEffect(() => {
     const handleResize = () => setIsMobileView(window.innerWidth < 576);
@@ -171,6 +184,19 @@ function TeamPage() {
       {isActive ? 'Active' : 'Inactive'}
     </span>
   );
+
+  const getVerificationBadge = (isVerified) => {
+    if (isVerified) return null;
+    return (
+      <span
+        className="badge px-2 py-1 fw-semibold text-nowrap"
+        style={{ fontSize: '11px', backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#D97706' }}
+        title="Hasn't clicked the verification link yet"
+      >
+        Pending Verification
+      </span>
+    );
+  };
 
   return (
     <div
@@ -473,7 +499,10 @@ function TeamPage() {
                         <span className="small" style={{ color: textSecondary, fontSize: '11px' }}>
                           Status
                         </span>
-                        {getStatusBadge(member.isActive)}
+                        <div className="d-flex align-items-center gap-1">
+                          {getVerificationBadge(member.isVerified)}
+                          {getStatusBadge(member.isActive)}
+                        </div>
                       </div>
 
                     </div>
@@ -513,7 +542,7 @@ function TeamPage() {
               </button>
             </div>
             <p className="small mb-3" style={{ color: textSecondary }}>
-              This creates the account directly with the password you set below — there's no email-invite step yet, so share the credentials with them yourself.
+              This creates the account with the password you set below. Staff accounts get a verification email and can't sign in until they click the link — admin accounts (if you invite one) can sign in right away.
             </p>
             {inviteError && <div className="alert alert-danger py-2 px-3 small mb-3">{inviteError}</div>}
             <form onSubmit={handleInvite}>
@@ -663,4 +692,4 @@ function TeamPage() {
   );
 }
 
-export default TeamPage;  
+export default TeamPage;
