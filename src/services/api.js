@@ -122,7 +122,16 @@ export const authService = {
 
     const data = await response.json();
     if (!response.ok) {
-      const error = new Error(data.detail || 'Registration failed');
+      let detailMsg = data.detail;
+      if (!detailMsg && typeof data === 'object') {
+        const firstKey = Object.keys(data)[0];
+        if (firstKey && Array.isArray(data[firstKey])) {
+          detailMsg = `${firstKey}: ${data[firstKey][0]}`;
+        } else if (firstKey && typeof data[firstKey] === 'string') {
+          detailMsg = `${firstKey}: ${data[firstKey]}`;
+        }
+      }
+      const error = new Error(detailMsg || 'Registration failed');
       error.response = { data, status: response.status };
       throw error;
     }
