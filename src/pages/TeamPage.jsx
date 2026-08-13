@@ -83,7 +83,11 @@ function TeamPage() {
     try {
       const data = await usersService.getAll();
       const list = Array.isArray(data) ? data : (data?.results || []);
-      setTeamMembers(list.map(mapMember));
+      // Removed staff are soft-deleted (is_active=False) rather than
+      // actually deleted, so the API still returns them — filter them out
+      // here so a removal sticks across reloads instead of only lasting
+      // until the next fetch.
+      setTeamMembers(list.map(mapMember).filter(m => m.isActive));
     } catch (err) {
       setLoadError('Could not load the team directory. Check your connection and try again.');
     } finally {
