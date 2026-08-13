@@ -141,6 +141,9 @@ function AnalyticsPage() {
   const [dateRange, setDateRange] = useState('week');
   const [showRangeMenu, setShowRangeMenu] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [isMobileView, setIsMobileView] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 576 : false
+  );
   const [searchQuery, setSearchQuery] = useState('');
 
   const [documents, setDocuments] = useState([]);
@@ -182,6 +185,13 @@ function AnalyticsPage() {
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobileView(window.innerWidth < 576);
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -441,7 +451,7 @@ function AnalyticsPage() {
               <div className="position-relative" ref={rangeRef}>
                 <button
                   onClick={() => setShowRangeMenu(v => !v)}
-                  className="btn btn-sm border d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0"
+                  className="btn btn-sm border d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0 header-action-btn"
                   style={{ backgroundColor: showRangeMenu ? hoverBg : cardBg, color: textPrimary, borderColor: borderColor }}
                 >
                   <Calendar size={14} />
@@ -450,8 +460,8 @@ function AnalyticsPage() {
                 </button>
                 {showRangeMenu && (
                   <div
-                    className="position-absolute rounded-3 overflow-hidden"
-                    style={{ top: '38px', right: 0, width: '160px', backgroundColor: cardBg, border: `1px solid ${borderColor}`, boxShadow: '0 10px 25px rgba(0,0,0,0.15)', zIndex: 1040 }}
+                    className="position-absolute rounded-3 overflow-hidden range-dropdown-menu"
+                    style={{ top: '38px', right: isMobileView ? 'auto' : 0, left: isMobileView ? 0 : 'auto', width: '160px', backgroundColor: cardBg, border: `1px solid ${borderColor}`, boxShadow: '0 10px 25px rgba(0,0,0,0.15)', zIndex: 1040 }}
                   >
                     {RANGE_OPTIONS.map(opt => (
                       <button
@@ -470,7 +480,7 @@ function AnalyticsPage() {
               <button
                 onClick={handleExportReport}
                 disabled={loading}
-                className="btn btn-sm text-white d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0"
+                className="btn btn-sm text-white d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0 header-action-btn"
                 style={{ backgroundColor: '#3B82F6', transition: 'all 0.15s ease' }}
               >
                 <Download size={14} />
@@ -672,6 +682,32 @@ function AnalyticsPage() {
         input::placeholder {
           color: ${textSecondary} !important;
           opacity: 0.7;
+        }
+
+        @media (max-width: 575.98px) {
+          main {
+            padding-top: 12px !important;
+          }
+          .header-action-btn {
+            font-size: 11px !important;
+            padding: 7px 10px !important;
+            gap: 5px !important;
+            min-height: 34px !important;
+            white-space: nowrap !important;
+          }
+          .header-action-btn svg {
+            width: 12px !important;
+            height: 12px !important;
+          }
+          .range-dropdown-menu {
+            width: min(92vw, 210px) !important;
+            right: auto !important;
+            left: 0 !important;
+          }
+          .range-dropdown-menu button {
+            font-size: 12px !important;
+            padding: 8px 10px !important;
+          }
         }
 
         @keyframes pulse {

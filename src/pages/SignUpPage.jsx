@@ -36,8 +36,8 @@ function SignUpPage() {
   };
 
   return (
-    <div className="container-fluid min-vh-100 d-flex p-0 bg-light" style={{ fontFamily: 'sans-serif' }}>
-      <div className="row g-0 w-100 link-dark text-decoration-none">
+    <div className="container-fluid min-vh-100 d-flex p-0 bg-light auth-shell" style={{ fontFamily: 'sans-serif' }}>
+      <div className="row g-0 w-100 link-dark text-decoration-none auth-layout">
 
         {/* LEFT PANEL */}
         <div
@@ -70,8 +70,18 @@ function SignUpPage() {
         </div>
 
         {/* RIGHT PANEL */}
-        <div className="col-12 col-lg-6 d-flex align-items-center justify-content-center p-4 p-sm-5 bg-white">
-          <div className="w-100 position-relative" style={{ maxWidth: '400px' }}>
+        <div className="col-12 col-lg-6 d-flex align-items-center justify-content-center p-4 p-sm-5 bg-white auth-form-shell">
+          <div className="w-100 position-relative auth-form-card" style={{ maxWidth: '400px' }}>
+            <div className="d-lg-none auth-mobile-panel">
+              <div className="d-flex align-items-center gap-2 mb-3">
+                <div className="rounded-3 d-flex align-items-center justify-content-center text-white fw-bold" style={{ width: '32px', height: '32px', backgroundColor: '#3B82F6' }}>O</div>
+                <span className="fw-bold tracking-wide style-logo text-white">OpsPortal</span>
+              </div>
+              <div>
+                <p className="small text-uppercase fw-semibold mb-2" style={{ letterSpacing: '0.12em', color: 'rgba(255,255,255,0.75)' }}>Create access</p>
+                <h2 className="fw-bold mb-1" style={{ color: '#fff', fontSize: '28px' }}>Set up your account</h2>
+              </div>
+            </div>
 
             {/* <Link
               to="/"
@@ -261,6 +271,65 @@ function SignUpPage() {
         }
         .style-logo {
           letter-spacing: -0.01em;
+        }
+        .auth-mobile-panel {
+          display: none;
+        }
+
+        @media (max-width: 575.98px) {
+          .auth-shell {
+            background: linear-gradient(180deg, #0F172A 0%, #111827 28%, #F8FAFC 28%, #F8FAFC 100%) !important;
+          }
+          .auth-layout {
+            min-height: 100vh;
+          }
+          .auth-form-shell {
+            padding: 16px 14px 30px !important;
+            align-items: flex-start !important;
+            justify-content: flex-start !important;
+          }
+          .auth-form-card {
+            max-width: 100% !important;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.96);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 22px;
+            box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+            padding: 18px 16px 16px;
+          }
+          .auth-mobile-panel {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 8px;
+            padding: 16px 16px 18px;
+            margin: -18px -16px 14px;
+            border-radius: 0 0 24px 24px;
+            background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+            box-shadow: 0 12px 25px rgba(15, 23, 42, 0.18);
+          }
+          .auth-form-card h2 {
+            font-size: 24px !important;
+          }
+          .auth-form-card .form-label,
+          .auth-form-card .form-check-label,
+          .auth-form-card .text-muted,
+          .auth-form-card .small,
+          .auth-form-card p,
+          .auth-form-card label {
+            font-size: 12px !important;
+          }
+          .auth-form-card .btn,
+          .auth-form-card input,
+          .auth-form-card button {
+            min-height: 42px;
+          }
+          .auth-form-card .form-check {
+            margin-bottom: 0;
+          }
+          .auth-form-card .btn-submit {
+            font-size: 14px;
+          }
         }
       `}</style>
     </div>

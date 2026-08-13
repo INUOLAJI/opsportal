@@ -117,6 +117,9 @@ function TaskPage() {
   const [darkMode, setDarkMode] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isMobileView, setIsMobileView] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 576 : false
+  );
 
   const [tasks, setTasks] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
@@ -204,6 +207,13 @@ function TaskPage() {
     loadTasks();
     loadActivity();
   }, [loadTasks, loadActivity]);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobileView(window.innerWidth < 576);
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -495,7 +505,7 @@ function TaskPage() {
             {openMenuId === task.id && (
               <div
                 ref={menuRef}
-                className="position-absolute shadow rounded-3 border p-1"
+                className="position-absolute shadow rounded-3 border p-1 admin-actions-menu"
                 style={{ right: 0, top: '20px', minWidth: '190px', zIndex: 20, backgroundColor: cardBg, borderColor: borderColor }}
               >
                 {canManage && (
@@ -833,7 +843,7 @@ function TaskPage() {
             <div className="d-flex gap-2 w-100 w-sm-auto justify-content-sm-end">
               <div className="position-relative" ref={filterRef}>
                 <button
-                  className="btn btn-sm border d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0 py-2 px-3 rounded-3"
+                  className="btn btn-sm border d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0 py-2 px-3 rounded-3 header-action-btn"
                   style={{ backgroundColor: showFilterMenu ? (darkMode ? '#334155' : '#F1F5F9') : cardBg, color: textPrimary, borderColor: borderColor }}
                   onClick={() => setShowFilterMenu(v => !v)}
                 >
@@ -841,7 +851,7 @@ function TaskPage() {
                   Filter Lanes {selectedPriorities.length > 0 && `(${selectedPriorities.length})`}
                 </button>
                 {showFilterMenu && (
-                  <div className="position-absolute shadow rounded-3 border p-3" style={{ right: 0, top: '42px', minWidth: '200px', zIndex: 20, backgroundColor: cardBg, borderColor: borderColor }}>
+                  <div className="position-absolute shadow rounded-3 border p-3 filter-dropdown-menu" style={{ right: isMobileView ? 'auto' : 0, left: isMobileView ? 0 : 'auto', top: '42px', minWidth: '200px', zIndex: 20, backgroundColor: cardBg, borderColor: borderColor }}>
                     <div className="small fw-semibold mb-2" style={{ fontSize: '11px', color: textSecondary }}>PRIORITY</div>
                     {PRIORITY_OPTIONS.map(opt => (
                       <div className="form-check mb-1" key={opt.value}>
@@ -863,7 +873,7 @@ function TaskPage() {
               </div>
               {isAdmin && (
                 <button
-                  className="btn btn-sm text-white d-flex align-items-center justify-content-center gap-2 shadow-sm flex-grow-1 flex-sm-grow-0 py-2 px-3 rounded-3"
+                  className="btn btn-sm text-white d-flex align-items-center justify-content-center gap-2 shadow-sm flex-grow-1 flex-sm-grow-0 py-2 px-3 rounded-3 header-action-btn"
                   style={{ backgroundColor: '#3B82F6', border: 'none' }}
                   onClick={openCreateModal}
                 >
@@ -1092,6 +1102,41 @@ function TaskPage() {
         input::placeholder {
           color: ${textSecondary} !important;
           opacity: 0.7;
+        }
+
+        @media (max-width: 575.98px) {
+          main {
+            padding-top: 12px !important;
+          }
+          .header-action-btn {
+            font-size: 11px !important;
+            padding: 7px 10px !important;
+            gap: 5px !important;
+            min-height: 34px !important;
+            white-space: nowrap !important;
+          }
+          .header-action-btn svg {
+            width: 12px !important;
+            height: 12px !important;
+          }
+          .filter-dropdown-menu,
+          .admin-actions-menu,
+          .range-dropdown-menu {
+            width: min(92vw, 210px) !important;
+            right: auto !important;
+            left: 0 !important;
+          }
+          .filter-dropdown-menu button,
+          .admin-actions-menu button,
+          .range-dropdown-menu button {
+            font-size: 12px !important;
+            padding: 8px 10px !important;
+          }
+          .admin-actions-menu {
+            min-width: 160px !important;
+            right: 0 !important;
+            left: auto !important;
+          }
         }
 
         @keyframes pulse {

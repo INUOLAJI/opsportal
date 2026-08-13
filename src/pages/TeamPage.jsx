@@ -43,6 +43,9 @@ function TeamPage() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+  const [isMobileView, setIsMobileView] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 576 : false
+  );
 
   const [teamMembers, setTeamMembers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -83,6 +86,13 @@ function TeamPage() {
   useEffect(() => {
     loadTeam();
   }, [loadTeam]);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobileView(window.innerWidth < 576);
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -319,7 +329,7 @@ function TeamPage() {
               <div className="position-relative" ref={filterRef}>
                 <button
                   onClick={() => setShowFilterMenu(prev => !prev)}
-                  className="btn btn-sm border d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0"
+                  className="btn btn-sm border d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0 header-action-btn"
                   style={{
                     backgroundColor: showFilterMenu ? hoverBg : cardBg,
                     color: textPrimary,
@@ -332,9 +342,9 @@ function TeamPage() {
                 </button>
                 {showFilterMenu && (
                   <div
-                    className="position-absolute rounded-3 overflow-hidden"
+                    className="position-absolute rounded-3 overflow-hidden filter-dropdown-menu"
                     style={{
-                      top: '42px', right: 0, width: '150px', backgroundColor: cardBg,
+                      top: '42px', right: isMobileView ? 'auto' : 0, left: isMobileView ? 0 : 'auto', width: '150px', backgroundColor: cardBg,
                       border: `1px solid ${borderColor}`, boxShadow: '0 10px 25px rgba(0,0,0,0.15)', zIndex: 1040
                     }}
                   >
@@ -592,6 +602,32 @@ function TeamPage() {
         input::placeholder {
           color: ${textSecondary} !important;
           opacity: 0.7;
+        }
+
+        @media (max-width: 575.98px) {
+          main {
+            padding-top: 12px !important;
+          }
+          .header-action-btn {
+            font-size: 11px !important;
+            padding: 7px 10px !important;
+            gap: 5px !important;
+            min-height: 34px !important;
+            white-space: nowrap !important;
+          }
+          .header-action-btn svg {
+            width: 12px !important;
+            height: 12px !important;
+          }
+          .filter-dropdown-menu {
+            width: min(92vw, 210px) !important;
+            right: auto !important;
+            left: 0 !important;
+          }
+          .filter-dropdown-menu button {
+            font-size: 12px !important;
+            padding: 8px 10px !important;
+          }
         }
 
         button {

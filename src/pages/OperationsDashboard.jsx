@@ -88,6 +88,9 @@ export default function OperationsDashboard() {
   const [darkMode, setDarkMode] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isMobileView, setIsMobileView] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 576 : false
+  );
 
   // Task queue state — backed by the API
   const [tasks, setTasks] = useState([]);
@@ -162,6 +165,13 @@ export default function OperationsDashboard() {
     loadTasks();
     loadActivity();
   }, [loadTasks, loadActivity]);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobileView(window.innerWidth < 576);
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Real-time updates over WebSocket — no more reloading to see new/updated
   // tasks or activity. Reconnects automatically if the connection drops.
@@ -709,7 +719,11 @@ export default function OperationsDashboard() {
                     backgroundColor: showFilterMenu ? (darkMode ? '#334155' : '#F1F5F9') : cardBg,
                     color: textPrimary,
                     borderColor: borderColor,
-                    transition: 'all 0.15s ease'
+                    transition: 'all 0.15s ease',
+                    minHeight: isMobileView ? '34px' : undefined,
+                    padding: isMobileView ? '7px 10px' : undefined,
+                    fontSize: isMobileView ? '11px' : undefined,
+                    whiteSpace: 'nowrap'
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = darkMode ? '#334155' : '#F1F5F9';
@@ -729,8 +743,10 @@ export default function OperationsDashboard() {
                     className="position-absolute rounded-3 overflow-hidden filter-dropdown-menu"
                     style={{
                       top: '42px',
-                      right: 0,
-                      width: '170px',
+                      right: isMobileView ? 'auto' : '0',
+                      left: isMobileView ? '0' : undefined,
+                      width: isMobileView ? 'min(92vw, 210px)' : '170px',
+                      maxWidth: isMobileView ? 'calc(100vw - 16px)' : '170px',
                       backgroundColor: cardBg,
                       border: `1px solid ${borderColor}`,
                       boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
@@ -790,7 +806,11 @@ export default function OperationsDashboard() {
           {/* KPI METRIC CARDS */}
           <div className="row g-3 mb-4">
             {taskMetrics.map((metric) => (
-              <div key={metric.id} className="col-12 col-sm-6 col-md-4">
+              <div
+                key={metric.id}
+                className="col-12 col-sm-6 col-md-4"
+                style={isMobileView ? { width: '100%', maxWidth: '100%', flex: '0 0 100%' } : undefined}
+              >
                 <div
                   className="card border-0 h-100 kpi-card"
                   style={{
@@ -798,7 +818,9 @@ export default function OperationsDashboard() {
                     color: textPrimary,
                     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
                     transition: 'all 0.2s ease',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    width: isMobileView ? '100%' : undefined,
+                    maxWidth: isMobileView ? '100%' : undefined
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.boxShadow = '0 10px 25px rgba(0, 0, 0, 0.1)';
@@ -853,7 +875,9 @@ export default function OperationsDashboard() {
                 style={{
                   backgroundColor: cardBg,
                   color: textPrimary,
-                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+                  width: isMobileView ? '100%' : undefined,
+                  maxWidth: isMobileView ? '100%' : undefined
                 }}
               >
                 <div className="card-body p-3 p-md-4">
@@ -953,7 +977,9 @@ export default function OperationsDashboard() {
                 style={{
                   backgroundColor: cardBg,
                   color: textPrimary,
-                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+                  width: isMobileView ? '100%' : undefined,
+                  maxWidth: isMobileView ? '100%' : undefined
                 }}
               >
                 <div
@@ -1028,7 +1054,9 @@ export default function OperationsDashboard() {
                 style={{
                   backgroundColor: cardBg,
                   color: textPrimary,
-                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+                  width: isMobileView ? '100%' : undefined,
+                  maxWidth: isMobileView ? '100%' : undefined
                 }}
               >
                 <div className="card-body p-3 p-md-4">
@@ -1391,10 +1419,15 @@ export default function OperationsDashboard() {
            the three main content cards, and the filter dropdown all felt
            oversized on small screens, so trim them down under 576px. */
         @media (max-width: 575.98px) {
+          main {
+            padding-top: 12px !important;
+          }
           .header-action-btn {
-            font-size: 12px !important;
-            padding: 6px 10px !important;
-            gap: 6px !important;
+            font-size: 11px !important;
+            padding: 7px 10px !important;
+            gap: 5px !important;
+            min-height: 34px !important;
+            white-space: nowrap !important;
           }
           .header-action-btn svg {
             width: 12px !important;
@@ -1402,26 +1435,43 @@ export default function OperationsDashboard() {
           }
 
           .filter-dropdown-menu {
-            width: 150px !important;
+            width: min(92vw, 210px) !important;
+            max-width: calc(100vw - 16px) !important;
+            right: auto !important;
+            left: 0 !important;
+            transform: none !important;
           }
           .filter-dropdown-menu button {
             font-size: 12px !important;
-            padding: 6px 10px !important;
+            padding: 8px 10px !important;
+          }
+
+          .row.g-3 > [class*="col-"],
+          .row.g-3.g-md-4 > [class*="col-"] {
+            width: 100% !important;
+            max-width: 100% !important;
+            flex: 0 0 100% !important;
+          }
+
+          .kpi-card,
+          .compact-card {
+            width: 100% !important;
+            max-width: 100% !important;
           }
 
           .kpi-card-body {
             padding: 12px !important;
           }
           .kpi-value {
-            font-size: 20px !important;
+            font-size: 18px !important;
           }
           .kpi-icon-wrap {
-            width: 36px !important;
-            height: 36px !important;
+            width: 34px !important;
+            height: 34px !important;
           }
           .kpi-icon-wrap svg {
-            width: 16px !important;
-            height: 16px !important;
+            width: 14px !important;
+            height: 14px !important;
           }
 
           .compact-card .card-body {
