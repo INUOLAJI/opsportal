@@ -128,6 +128,42 @@ export const authService = {
     }
     return data;
   },
+
+  // uid/token come from the query params on the /verify-email link staff get by email.
+  verifyEmail: async (uid, token) => {
+    const response = await fetch(`${API_BASE_URL}/auth/verify-email/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid, token }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      const error = new Error(data.detail || 'Verification failed');
+      error.response = { data, status: response.status };
+      throw error;
+    }
+    return data;
+  },
+
+  // Always resolves with a generic message, even for unknown emails —
+  // matches the backend's response, which never confirms whether an
+  // account exists.
+  resendVerification: async (email) => {
+    const response = await fetch(`${API_BASE_URL}/auth/resend-verification/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      const error = new Error(data.detail || 'Could not resend verification email');
+      error.response = { data, status: response.status };
+      throw error;
+    }
+    return data;
+  },
 };
 
 // Tasks API Service
