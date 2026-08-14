@@ -176,21 +176,26 @@ function DocsPage() {
   }, []);
 
   useEffect(() => {
+    setDocuments([]);
     loadDocuments();
-  }, [loadDocuments]);
+  }, [user?.id, loadDocuments]);
 
   const loadTeamUsers = useCallback(async () => {
     setTeamUsersLoading(true);
     try {
       const data = await usersService.getAll();
-      const list = Array.isArray(data) ? data : (data?.results || []);
+      let list = Array.isArray(data) ? data : (data?.results || []);
+      const userCompanyId = user?.company_id || user?.company;
+      if (userCompanyId) {
+        list = list.filter(u => (u.company_id === userCompanyId || u.company === userCompanyId));
+      }
       setTeamUsers(list);
     } catch (err) {
       setTeamUsers([]);
     } finally {
       setTeamUsersLoading(false);
     }
-  }, []);
+  }, [user?.company_id, user?.company]);
 
   useEffect(() => {
     if (isAdmin && showUploadModal && teamUsers.length === 0 && !teamUsersLoading) {

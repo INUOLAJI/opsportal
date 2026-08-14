@@ -173,8 +173,14 @@ function AnalyticsPage() {
         tasksService.getAll(),
         activityService.getAll(),
       ]);
+      const userCompanyId = user?.company_id || user?.company;
+      const rawUsers = Array.isArray(usersRes) ? usersRes : (usersRes?.results || []);
+      const companyUsers = userCompanyId
+        ? rawUsers.filter(u => (u.company_id === userCompanyId || u.company === userCompanyId))
+        : rawUsers;
+
       setDocuments(Array.isArray(docsRes) ? docsRes : (docsRes?.results || []));
-      setUsers(Array.isArray(usersRes) ? usersRes : (usersRes?.results || []));
+      setUsers(companyUsers);
       setTasks(Array.isArray(tasksRes) ? tasksRes : (tasksRes?.results || []));
       setActivityLogs(Array.isArray(activityRes) ? activityRes : (activityRes?.results || []));
     } catch (err) {
@@ -182,7 +188,7 @@ function AnalyticsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.company_id, user?.company]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 

@@ -24,16 +24,7 @@ const STATUS_OPTIONS = [
   { value: 'complete', label: 'Complete' },
 ];
 
-// Fallback data so the board still looks alive if the API is unreachable
-// (offline dev, backend not started, etc). Shaped exactly like mapTask()'s
-// output so it flows through the same render path as real data.
-const FALLBACK_TASKS = [
-  { id: 'f1', title: 'Optimize database indexing schemas', tag: 'Backend', status: 'pending', priority: 'high', dueDateRaw: null, date: 'Jun 12', assigneeId: null, assigneeName: 'Maria Chen', assignee: 'MC', completionRequested: false },
-  { id: 'f2', title: 'Draft API system error definitions', tag: 'Architecture', status: 'pending', priority: 'medium', dueDateRaw: null, date: 'Jun 15', assigneeId: null, assigneeName: 'Jordan Diaz', assignee: 'JD', completionRequested: false },
-  { id: 'f3', title: 'Fix auth refresh-token memory leak', tag: 'Security', status: 'in_progress', priority: 'urgent', dueDateRaw: null, date: 'Jun 10', assigneeId: null, assigneeName: 'Sam Jones', assignee: 'SJ', completionRequested: false },
-  { id: 'f4', title: 'Re-align layout grid constraints', tag: 'UI/UX', status: 'in_progress', priority: 'low', dueDateRaw: null, date: 'Jun 18', assigneeId: null, assigneeName: 'Bella Brooks', assignee: 'BB', completionRequested: true },
-  { id: 'f5', title: 'Automate container image orchestration', tag: 'DevOps', status: 'complete', priority: 'high', dueDateRaw: null, date: 'Jun 08', assigneeId: null, assigneeName: 'Maria Chen', assignee: 'MC', completionRequested: false },
-];
+// ];
 
 const AVATAR_COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#06B6D4', '#F59E0B', '#10B981'];
 function colorForString(str) {
@@ -193,8 +184,8 @@ function TaskPage() {
       const list = Array.isArray(data) ? data : (data?.results || []);
       setTasks(list.map(mapTask));
     } catch (err) {
-      setLoadError('Could not reach the server — showing sample data.');
-      setTasks(FALLBACK_TASKS);
+      setLoadError('Could not reach the server. Please check your connection.');
+      setTasks([]);
     } finally {
       setLoadingTasks(false);
     }
@@ -215,9 +206,11 @@ function TaskPage() {
   }, []);
 
   useEffect(() => {
+    setTasks([]);
+    setNotifications([]);
     loadTasks();
     loadActivity();
-  }, [loadTasks, loadActivity]);
+  }, [user?.id, loadTasks, loadActivity]);
 
   useEffect(() => {
     const handleResize = () => setIsMobileView(window.innerWidth < 576);
@@ -233,9 +226,10 @@ function TaskPage() {
         const data = await usersService.getAll();
         let allUsers = Array.isArray(data) ? data : (data?.results || []);
         
-        // Filter users to only show those from the same company
-        if (user?.company_id) {
-          allUsers = allUsers.filter(u => u.company_id === user.company_id);
+        // Filter users to strictly only show those from the same company
+        const userCompanyId = user?.company_id || user?.company;
+        if (userCompanyId) {
+          allUsers = allUsers.filter(u => (u.company_id === userCompanyId || u.company === userCompanyId));
         }
         
         setUsers(allUsers);
@@ -243,7 +237,7 @@ function TaskPage() {
         // Non-fatal — the assignee dropdown just falls back to unassigned.
       }
     })();
-  }, [isAdmin, user?.company_id]);
+  }, [isAdmin, user?.company_id, user?.company]);
 
   // Real-time updates over WebSocket — new/updated tasks and activity land
   // without a manual refresh. Reconnects automatically if the connection drops.

@@ -164,9 +164,11 @@ export default function OperationsDashboard() {
   }, []);
 
   useEffect(() => {
+    setTasks([]);
+    setNotifications([]);
     loadTasks();
     loadActivity();
-  }, [loadTasks, loadActivity]);
+  }, [user?.id, loadTasks, loadActivity]);
 
   useEffect(() => {
     const handleResize = () => setIsMobileView(window.innerWidth < 576);
@@ -253,9 +255,10 @@ export default function OperationsDashboard() {
       const data = await usersService.getAll();
       let list = Array.isArray(data) ? data : (data?.results || []);
       
-      // Filter users to only show those from the same company
-      if (user?.company_id) {
-        list = list.filter(u => u.company_id === user.company_id);
+      // Filter users to strictly only show those from the same company
+      const userCompanyId = user?.company_id || user?.company;
+      if (userCompanyId) {
+        list = list.filter(u => (u.company_id === userCompanyId || u.company === userCompanyId));
       }
       
       setTeamUsers(list);
@@ -264,7 +267,7 @@ export default function OperationsDashboard() {
     } finally {
       setTeamUsersLoading(false);
     }
-  }, [user?.company_id]);
+  }, [user?.company_id, user?.company]);
 
   useEffect(() => {
     if (isAdmin && showCreateModal && teamUsers.length === 0 && !teamUsersLoading) {

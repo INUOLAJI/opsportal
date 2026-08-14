@@ -26,6 +26,8 @@ function mapMember(u) {
     email: u.email,
     role: u.role,
     roleLabel,
+    company: u.company || u.company_id,
+    companyName: u.company_name || '',
     initials: u.full_name
       ? u.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
       : (u.email ? u.email[0].toUpperCase() : '?'),
@@ -69,6 +71,22 @@ function TeamPage() {
   const [removeTarget, setRemoveTarget] = useState(null); // the member object pending confirmation
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState(null);
+  const [resendingEmail, setResendingEmail] = useState(null);
+  const [resendSuccess, setResendSuccess] = useState(null);
+
+  const handleResendEmail = async (email) => {
+    setResendingEmail(email);
+    setResendSuccess(null);
+    try {
+      await authService.resendVerification(email);
+      setResendSuccess(`Verification email dispatched to ${email}!`);
+      setTimeout(() => setResendSuccess(null), 4000);
+    } catch (err) {
+      // quiet fallback
+    } finally {
+      setResendingEmail(null);
+    }
+  };
 
   const userInitials = user?.full_name
     ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -82,18 +100,23 @@ function TeamPage() {
     setLoadError(null);
     try {
       const data = await usersService.getAll();
-      const list = Array.isArray(data) ? data : (data?.results || []);
+      let list = Array.isArray(data) ? data : (data?.results || []);
+      const userCompanyId = user?.company_id || user?.company;
+      if (userCompanyId) {
+        list = list.filter(u => (u.company_id === userCompanyId || u.company === userCompanyId));
+      }
       setTeamMembers(list.map(mapMember));
     } catch (err) {
       setLoadError('Could not load the team directory. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.company_id, user?.company]);
 
   useEffect(() => {
+    setTeamMembers([]);
     loadTeam();
-  }, [loadTeam]);
+  }, [user?.id, loadTeam]);
 
   // Opened via the sidebar's "Add Staff" shortcut — jump straight into the
   // invite flow, then clear the state so a refresh/back-nav doesn't reopen it.
@@ -148,6 +171,8 @@ function TeamPage() {
       await loadTeam(); // refetch for canonical data (id, date_joined, etc.)
       resetInviteForm();
       setShowInviteModal(false);
+      setResendSuccess(`Staff invited! Verification email sent to ${inviteEmail.trim()}.`);
+      setTimeout(() => setResendSuccess(null), 5000);
     } catch (err) {
       const message = err.response?.data?.email?.[0] || err.message || 'Could not create the account. Please try again.';
       setInviteError(message);
@@ -204,16 +229,29 @@ function TeamPage() {
     </span>
   );
 
-  const getVerificationBadge = (isVerified) => {
-    if (isVerified) return null;
+  const getVerificationBadge = (member) => {
+    if (member.isVerified) return null;
     return (
-      <span
-        className="badge px-2 py-1 fw-semibold text-nowrap"
-        style={{ fontSize: '11px', backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#D97706' }}
-        title="Hasn't clicked the verification link yet"
-      >
-        Pending Verification
-      </span>
+      <div className="d-flex align-items-center gap-1">
+        <span
+          className="badge px-2 py-1 fw-semibold text-nowrap"
+          style={{ fontSize: '11px', backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#D97706' }}
+          title="Hasn't clicked the verification link yet"
+        >
+          Pending Verification
+        </span>
+        {isAdmin && (
+          <button
+            onClick={(e) => { e.stopPropagation(); handleResendEmail(member.email); }}
+            disabled={resendingEmail === member.email}
+            className="btn btn-sm btn-link p-0 text-decoration-none"
+            style={{ fontSize: '11px', color: '#3B82F6' }}
+            title="Resend verification email"
+          >
+            {resendingEmail === member.email ? <Loader2 size={12} className="spin" /> : 'Resend'}
+          </button>
+        )}
+      </div>
     );
   };
 
@@ -363,11 +401,18 @@ function TeamPage() {
           {/* PAGE HEADER */}
           <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start gap-3 mb-4 mt-5">
             <div>
-              <h1 className="h3 fw-bold mb-1" style={{ color: textPrimary }}>
-                Team Directory
-              </h1>
-              <p className="small mb-0" style={{ color: textSecondary }}>
-                Manage team members, assign permissions, and check availability.
+              <div className="d-flex align-items-center gap-2">
+                <h1 className="h3 fw-bold mb-0" style={{ color: textPrimary }}>
+                  Team Directory
+                </h1>
+                {user?.company_name && (
+                  <span className="badge rounded-pill" style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#3B82F6', fontSize: '11px' }}>
+                    {user.company_name}
+                  </span>
+                )}
+              </div>
+              <p className="small mb-0 mt-1" style={{ color: textSecondary }}>
+                Manage {user?.company_name ? `${user.company_name} ` : ''}team members, assign permissions, and check availability.
               </p>
             </div>
             <div className="d-flex gap-2 w-100 w-sm-auto justify-content-sm-end">
@@ -412,15 +457,22 @@ function TeamPage() {
               {isAdmin && (
                 <button
                   onClick={() => setShowInviteModal(true)}
-                  className="btn btn-sm text-white d-flex align-items-center justify-content-center gap-2 flex-grow-1 flex-sm-grow-0"
+                  className="btn btn-sm text-white d-flex align-items-center justify-content-center gap-2 px-3 flex-grow-1 flex-sm-grow-0 shadow-sm border-0 header-action-btn"
                   style={{ backgroundColor: '#3B82F6', transition: 'all 0.15s ease' }}
                 >
-                  <Plus size={14} />
-                  Invite Member
+                  <Plus size={16} />
+                  <span>Invite Member</span>
                 </button>
               )}
             </div>
           </div>
+
+          {resendSuccess && (
+            <div className="alert alert-success py-2 px-3 small mb-3 rounded-3 d-flex align-items-center gap-2">
+              <Check size={16} />
+              <span>{resendSuccess}</span>
+            </div>
+          )}
 
           {loadError && (
             <div className="alert alert-danger py-2 px-3 small d-flex justify-content-between align-items-center mb-3" role="alert">
@@ -535,7 +587,7 @@ function TeamPage() {
                           Status
                         </span>
                         <div className="d-flex align-items-center gap-1">
-                          {getVerificationBadge(member.isVerified)}
+                          {getVerificationBadge(member)}
                           {getStatusBadge(member.isActive)}
                         </div>
                       </div>
