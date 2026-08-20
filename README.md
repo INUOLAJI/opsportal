@@ -61,6 +61,15 @@ UX:
   on the Settings page (staff get a read-only view with a banner).
 - Staff flag a task done via "Request completion"; only an admin can mark it
   actually complete.
+- One shared `SignInPage` handles both admins and staff — it no longer sends
+  a hardcoded `role` to the backend; the account's real role comes back from
+  the database in the sign-in response.
+- Staff accounts created by an admin must click an emailed verification
+  link before they can sign in (`code: "email_not_verified"` from the
+  backend triggers a "resend verification" prompt on the sign-in page).
+- The task assignee dropdown (`TaskPage.jsx`) only lists staff — it calls
+  `usersService.getAll('staff')`, which the backend filters server-side via
+  `?role=staff` so admins never show up as assignable.
 
 ## Environment variables
 
