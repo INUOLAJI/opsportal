@@ -179,6 +179,25 @@ export const authService = {
     }
     return data;
   },
+
+  changePassword: async (current_password, new_password) => {
+    const token = getAccessToken();
+    const response = await fetch(`${API_BASE_URL}/auth/change-password/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ current_password, new_password }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const error = new Error(data.detail || 'Could not change password');
+      error.response = { data, status: response.status };
+      throw error;
+    }
+    return data;
+  },
 };
 
 // Tasks API Service

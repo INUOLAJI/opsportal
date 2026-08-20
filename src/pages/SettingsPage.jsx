@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import { useAuth } from '../context/AuthContext';
-import { settingsService, activityService } from '../services/api';
+import { settingsService, activityService, authService } from '../services/api';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 function formatRelativeTime(dateString) {
@@ -136,6 +136,12 @@ function SettingsPage() {
 
   // Toast Notification state
   const [toast, setToast] = useState(null);
+
+  // Change Password state
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwError, setPwError] = useState(null);
+  const [pwSuccess, setPwSuccess] = useState(false);
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type, id: Date.now() });
@@ -457,6 +463,31 @@ function SettingsPage() {
     setTimeout(() => {
       showToast('Cache cleared and fresh settings loaded!');
     }, 400);
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    setPwError(null);
+    setPwSuccess(false);
+    if (pwForm.next !== pwForm.confirm) {
+      setPwError('New passwords do not match.');
+      return;
+    }
+    if (pwForm.next.length < 8) {
+      setPwError('New password must be at least 8 characters.');
+      return;
+    }
+    setPwSaving(true);
+    try {
+      await authService.changePassword(pwForm.current, pwForm.next);
+      setPwForm({ current: '', next: '', confirm: '' });
+      setPwSuccess(true);
+      showToast('Password changed successfully!');
+    } catch (err) {
+      setPwError(err.message || 'Could not change password.');
+    } finally {
+      setPwSaving(false);
+    }
   };
 
   const handleLogout = () => {
@@ -1580,6 +1611,67 @@ function SettingsPage() {
                               </button>
                             </div>
                           )}
+                        </div>
+
+                        {/* Change Password */}
+                        <div className="p-3 rounded-3 border mb-4" style={{ backgroundColor: hoverBg, borderColor }}>
+                          <div className="d-flex align-items-center gap-2 mb-3">
+                            <Lock size={16} className="text-primary" />
+                            <h6 className="fw-bold mb-0 small" style={{ color: textPrimary }}>Change Password</h6>
+                          </div>
+                          <form onSubmit={handleChangePassword}>
+                            <div className="row g-3">
+                              <div className="col-12">
+                                <label className="form-label small fw-semibold mb-1" style={{ color: textSecondary }}>Current Password</label>
+                                <input
+                                  type="password"
+                                  className="form-control form-control-sm border shadow-none py-2 rounded-3"
+                                  style={{ backgroundColor: inputBg, color: textPrimary, borderColor }}
+                                  value={pwForm.current}
+                                  onChange={(e) => setPwForm(p => ({ ...p, current: e.target.value }))}
+                                  placeholder="Enter current password"
+                                  disabled={pwSaving}
+                                />
+                              </div>
+                              <div className="col-12 col-sm-6">
+                                <label className="form-label small fw-semibold mb-1" style={{ color: textSecondary }}>New Password</label>
+                                <input
+                                  type="password"
+                                  className="form-control form-control-sm border shadow-none py-2 rounded-3"
+                                  style={{ backgroundColor: inputBg, color: textPrimary, borderColor }}
+                                  value={pwForm.next}
+                                  onChange={(e) => setPwForm(p => ({ ...p, next: e.target.value }))}
+                                  placeholder="At least 8 characters"
+                                  disabled={pwSaving}
+                                />
+                              </div>
+                              <div className="col-12 col-sm-6">
+                                <label className="form-label small fw-semibold mb-1" style={{ color: textSecondary }}>Confirm New Password</label>
+                                <input
+                                  type="password"
+                                  className="form-control form-control-sm border shadow-none py-2 rounded-3"
+                                  style={{ backgroundColor: inputBg, color: textPrimary, borderColor }}
+                                  value={pwForm.confirm}
+                                  onChange={(e) => setPwForm(p => ({ ...p, confirm: e.target.value }))}
+                                  placeholder="Repeat new password"
+                                  disabled={pwSaving}
+                                />
+                              </div>
+                            </div>
+                            {pwError && <div className="alert alert-danger py-2 px-3 small mt-3 mb-0">{pwError}</div>}
+                            {pwSuccess && <div className="alert alert-success py-2 px-3 small mt-3 mb-0">Password changed successfully.</div>}
+                            <div className="mt-3 d-flex justify-content-end">
+                              <button
+                                type="submit"
+                                className="btn btn-sm text-white d-flex align-items-center gap-2 px-3 py-2 rounded-3"
+                                style={{ backgroundColor: '#3B82F6' }}
+                                disabled={pwSaving || !pwForm.current || !pwForm.next || !pwForm.confirm}
+                              >
+                                {pwSaving && <Loader2 size={13} className="spin" />}
+                                {pwSaving ? 'Saving...' : 'Update Password'}
+                              </button>
+                            </div>
+                          </form>
                         </div>
 
                         {/* Security Links & Action Buttons */}

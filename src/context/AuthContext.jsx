@@ -62,6 +62,14 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const loginWithTokens = (tokens, userData) => {
+    localStorage.setItem('accessToken', tokens.access);
+    localStorage.setItem('refreshToken', tokens.refresh);
+    localStorage.setItem('user', JSON.stringify(userData));
+    setUser(userData);
+    setIsAuthenticated(true);
+  };
+
   const logout = () => {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
@@ -72,7 +80,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, loading, login, signup, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, loading, login, loginWithTokens, signup, logout }}>
       {children}
     </AuthContext.Provider>
   );
