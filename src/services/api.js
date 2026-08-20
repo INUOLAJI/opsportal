@@ -247,6 +247,27 @@ export const tasksService = {
     }
     return res.json();
   },
+  uploadAttachment: async (taskId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await customFetch(`/tasks/${taskId}/attachments/`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to upload attachment');
+    }
+    return res.json();
+  },
+  deleteAttachment: async (taskId, attId) => {
+    const res = await customFetch(`/tasks/${taskId}/attachments/${attId}/`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to delete attachment');
+    }
+    return true;
+  },
 };
 
 // Documents API Service

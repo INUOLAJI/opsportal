@@ -2,8 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Plus, Filter, Search, MoreVertical, Calendar, CheckCircle2, Clock,
-  AlertTriangle, X, Trash2, Pencil, Send, Loader2,
-  Menu, Bell, Moon, Sun, ChevronDown, LogOut
+  AlertTriangle, X, Trash2, Pencil, Send, Loader2, Paperclip,
+  Menu, Bell, Moon, Sun, ChevronDown, LogOut, Download
 } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import { tasksService, usersService, activityService, getWebSocketUrl } from '../services/api';
@@ -75,7 +75,9 @@ function mapTask(t) {
     assigneeId: t.assignee ?? null,
     assigneeName: t.assignee_name || null,
     assignee: t.assignee_initials || '—',
+    assignees: t.assignees_detail || [],
     completionRequested: !!t.completion_requested,
+    attachments: t.attachments || [],
   };
 }
 
@@ -140,10 +142,16 @@ function TaskPage() {
 
   // Create/Edit modal (admin only)
   const [showTicketModal, setShowTicketModal] = useState(false);
-  const [editingTask, setEditingTask] = useState(null); // null = create mode
-  const [form, setForm] = useState({ title: '', tag: '', assigneeId: '', priority: 'medium', dueDate: '', status: 'pending' });
+  const [editingTask, setEditingTask] = useState(null);
+  const [form, setForm] = useState({ title: '', tag: '', assigneeIds: [], priority: 'medium', dueDate: '', status: 'pending' });
   const [formError, setFormError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Attachment modal
+  const [attachmentTask, setAttachmentTask] = useState(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [attachError, setAttachError] = useState(null);
+  const attachInputRef = useRef(null);
 
   // Delete confirmation
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -339,7 +347,7 @@ function TaskPage() {
 
   const openCreateModal = () => {
     setEditingTask(null);
-    setForm({ title: '', tag: '', assigneeId: '', priority: 'medium', dueDate: '', status: 'pending' });
+    setForm({ title: '', tag: '', assigneeIds: [], priority: 'medium', dueDate: '', status: 'pending' });
     setFormError(null);
     setShowTicketModal(true);
   };
@@ -349,7 +357,7 @@ function TaskPage() {
     setForm({
       title: task.title,
       tag: task.tag === 'General' ? '' : task.tag,
-      assigneeId: task.assigneeId ? String(task.assigneeId) : '',
+      assigneeIds: task.assignees.map(a => a.id),
       priority: task.priority,
       dueDate: toDateInputValue(task.dueDateRaw),
       status: task.status,
@@ -376,7 +384,7 @@ function TaskPage() {
     const payload = {
       title: form.title.trim(),
       tag: form.tag.trim(),
-      assignee: form.assigneeId ? Number(form.assigneeId) : null,
+      assignees: form.assigneeIds,
       priority: form.priority,
       due_date: form.dueDate || null,
       status: form.status,
@@ -395,6 +403,57 @@ function TaskPage() {
       setFormError(err.message || 'Could not save the task. Please try again.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const toggleAssignee = (id) => {
+    setForm(prev => ({
+      ...prev,
+      assigneeIds: prev.assigneeIds.includes(id)
+        ? prev.assigneeIds.filter(x => x !== id)
+        : [...prev.assigneeIds, id],
+    }));
+  };
+
+  // --- Attachments ---
+  const openAttachmentModal = (task) => {
+    setAttachmentTask(task);
+    setAttachError(null);
+    setOpenMenuId(null);
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !attachmentTask) return;
+    setUploadingFile(true);
+    setAttachError(null);
+    try {
+      const att = await tasksService.uploadAttachment(attachmentTask.id, file);
+      setTasks(prev => prev.map(t =>
+        t.id === attachmentTask.id
+          ? { ...t, attachments: [...t.attachments, att] }
+          : t
+      ));
+      setAttachmentTask(prev => ({ ...prev, attachments: [...prev.attachments, att] }));
+    } catch (err) {
+      setAttachError(err.message || 'Upload failed.');
+    } finally {
+      setUploadingFile(false);
+      if (attachInputRef.current) attachInputRef.current.value = '';
+    }
+  };
+
+  const handleDeleteAttachment = async (attId) => {
+    if (!attachmentTask) return;
+    try {
+      await tasksService.deleteAttachment(attachmentTask.id, attId);
+      const updated = attachmentTask.attachments.filter(a => a.id !== attId);
+      setTasks(prev => prev.map(t =>
+        t.id === attachmentTask.id ? { ...t, attachments: updated } : t
+      ));
+      setAttachmentTask(prev => ({ ...prev, attachments: updated }));
+    } catch (err) {
+      setAttachError(err.message || 'Could not delete attachment.');
     }
   };
 
@@ -525,6 +584,9 @@ function TaskPage() {
                     <button className="btn btn-sm w-100 text-start d-flex align-items-center gap-2 px-2 py-1" style={{ color: textPrimary }} onClick={() => openEditModal(task)}>
                       <Pencil size={13} /> Edit task
                     </button>
+                    <button className="btn btn-sm w-100 text-start d-flex align-items-center gap-2 px-2 py-1" style={{ color: textPrimary }} onClick={() => openAttachmentModal(task)}>
+                      <Paperclip size={13} /> Attachments {task.attachments.length > 0 && `(${task.attachments.length})`}
+                    </button>
                     <div className="px-2 py-1 small" style={{ fontSize: '10px', color: textSecondary }}>MOVE TO</div>
                     {STATUS_OPTIONS.filter(s => s.value !== task.status).map(s => (
                       <button
@@ -556,6 +618,11 @@ function TaskPage() {
                     Request completion review
                   </button>
                 )}
+                {!isAdmin && (
+                  <button className="btn btn-sm w-100 text-start d-flex align-items-center gap-2 px-2 py-1" style={{ color: textPrimary }} onClick={() => openAttachmentModal(task)}>
+                    <Paperclip size={13} /> Attachments {task.attachments.length > 0 && `(${task.attachments.length})`}
+                  </button>
+                )}
                 {!canManage && !canRequestCompletion && (
                   <div className="px-2 py-1 small" style={{ color: textSecondary }}>No actions available</div>
                 )}
@@ -574,23 +641,34 @@ function TaskPage() {
           </div>
         )}
 
-        <div className="d-flex justify-content-between align-items-center pt-2.5" style={{ borderTop: `1px solid ${borderColor}` }}>
+        <div className="d-flex justify-content-between align-items-center pt-2" style={{ borderTop: `1px solid ${borderColor}` }}>
           <div className={`d-flex align-items-center gap-1 small ${isOverdue ? 'text-danger fw-semibold' : ''}`} style={{ fontSize: '11px', color: isOverdue ? undefined : textSecondary }}>
             {isOverdue ? <AlertTriangle size={12} /> : (bucket === 'in-progress' ? <Clock size={12} /> : <Calendar size={12} />)}
             {isOverdue ? `Overdue · ${task.date}` : task.date}
+            {task.attachments.length > 0 && (
+              <span className="ms-1 d-flex align-items-center gap-1" style={{ color: textSecondary }}>
+                <Paperclip size={11} />{task.attachments.length}
+              </span>
+            )}
           </div>
-          <div className="d-flex align-items-center gap-2">
+          <div className="d-flex align-items-center gap-1">
             {isComplete ? (
               <span className="text-success d-flex align-items-center gap-1 small fw-semibold" style={{ fontSize: '11px' }}>
                 <CheckCircle2 size={12} /> Verified
               </span>
             ) : getPriorityBadge(task.priority)}
-            <div
-              className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold text-center"
-              style={{ width: '26px', height: '26px', fontSize: '10px', backgroundColor: avatarColorFor(bucket) }}
-              title={task.assigneeName || 'Unassigned'}
-            >
-              {task.assignee}
+            <div className="d-flex ms-1">
+              {task.assignees.length > 0
+                ? task.assignees.slice(0, 3).map((a, i) => (
+                    <div
+                      key={a.id}
+                      className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold"
+                      style={{ width: '24px', height: '24px', fontSize: '9px', backgroundColor: colorForString(a.full_name), marginLeft: i > 0 ? '-6px' : 0, border: `2px solid ${cardBg}` }}
+                      title={a.full_name}
+                    >{a.initials}</div>
+                  ))
+                : <div className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold" style={{ width: '24px', height: '24px', fontSize: '9px', backgroundColor: avatarColorFor(bucket) }} title="Unassigned">—</div>
+              }
             </div>
           </div>
         </div>
@@ -997,29 +1075,23 @@ function TaskPage() {
                 </div>
               </div>
 
-              <div className="row g-2 mb-3">
-                <div className="col-6">
-                  <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Assignee</label>
-                  <select
-                    className="form-select"
-                    value={form.assigneeId}
-                    onChange={(e) => setForm({ ...form, assigneeId: e.target.value })}
-                    style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }}
-                  >
-                    <option value="">Unassigned</option>
-                    {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-                  </select>
+              <div className="mb-3">
+                <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Assignees</label>
+                <div className="rounded-3 p-2" style={{ backgroundColor: inputBg, border: `1px solid ${borderColor}`, maxHeight: '120px', overflowY: 'auto' }}>
+                  {users.length === 0 && <p className="small mb-0" style={{ color: textSecondary }}>No staff members found.</p>}
+                  {users.map(u => (
+                    <div key={u.id} className="form-check mb-1">
+                      <input className="form-check-input" type="checkbox" id={`assignee-${u.id}`} checked={form.assigneeIds.includes(u.id)} onChange={() => toggleAssignee(u.id)} />
+                      <label className="form-check-label small" style={{ color: textPrimary }} htmlFor={`assignee-${u.id}`}>{u.full_name}</label>
+                    </div>
+                  ))}
                 </div>
-                <div className="col-6">
-                  <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Due date</label>
-                  <input
-                    type="date"
-                    className="form-control"
-                    value={form.dueDate}
-                    onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-                    style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }}
-                  />
-                </div>
+                {form.assigneeIds.length > 0 && <p className="small mt-1 mb-0" style={{ color: textSecondary }}>{form.assigneeIds.length} selected</p>}
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Due date</label>
+                <input type="date" className="form-control" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }} />
               </div>
 
               {editingTask && (
@@ -1045,6 +1117,64 @@ function TaskPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ATTACHMENTS MODAL */}
+      {attachmentTask && (
+        <div
+          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center p-3"
+          style={{ background: 'rgba(15, 23, 42, 0.55)', zIndex: 1050 }}
+          onClick={() => setAttachmentTask(null)}
+        >
+          <div
+            className="rounded-4 shadow-lg p-4"
+            style={{ width: '480px', maxWidth: '92vw', maxHeight: '90vh', overflowY: 'auto', backgroundColor: cardBg }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="d-flex justify-content-between align-items-center mb-1">
+              <h5 className="fw-bold mb-0 d-flex align-items-center gap-2" style={{ color: textPrimary }}>
+                <Paperclip size={16} /> Attachments
+              </h5>
+              <button className="btn p-0 border-0 bg-transparent" style={{ color: textSecondary }} onClick={() => setAttachmentTask(null)}><X size={18} /></button>
+            </div>
+            <p className="small mb-3" style={{ color: textSecondary }}>{attachmentTask.title}</p>
+
+            {attachError && <div className="alert alert-danger py-2 px-3 small mb-3">{attachError}</div>}
+
+            <div
+              className="rounded-3 p-3 mb-3 text-center"
+              style={{ border: `2px dashed ${borderColor}`, backgroundColor: inputBg, cursor: 'pointer' }}
+              onClick={() => attachInputRef.current?.click()}
+            >
+              <input ref={attachInputRef} type="file" className="d-none" onChange={handleFileUpload} />
+              {uploadingFile
+                ? <><Loader2 size={16} className="spin me-1" /><span className="small" style={{ color: textSecondary }}>Uploading...</span></>
+                : <><Paperclip size={15} className="me-1" style={{ color: textSecondary }} /><span className="small" style={{ color: textSecondary }}>Click to attach a file (max 10MB)</span></>
+              }
+            </div>
+
+            {attachmentTask.attachments.length === 0
+              ? <p className="small text-center mb-0" style={{ color: textSecondary }}>No attachments yet.</p>
+              : (
+                <div className="d-flex flex-column gap-2">
+                  {attachmentTask.attachments.map(att => (
+                    <div key={att.id} className="d-flex align-items-center justify-content-between p-2 px-3 rounded-3" style={{ backgroundColor: inputBg, border: `1px solid ${borderColor}` }}>
+                      <div className="d-flex align-items-center gap-2 min-w-0">
+                        <Paperclip size={13} style={{ color: textSecondary, flexShrink: 0 }} />
+                        <span className="small text-truncate" style={{ color: textPrimary }}>{att.filename}</span>
+                        {att.file_size_mb && <span className="small flex-shrink-0" style={{ color: textSecondary }}>{att.file_size_mb}MB</span>}
+                      </div>
+                      <div className="d-flex gap-1 flex-shrink-0">
+                        <a href={att.file_url} target="_blank" rel="noreferrer" className="btn btn-sm btn-link p-1" style={{ color: textSecondary }} title="Download"><Download size={13} /></a>
+                        <button className="btn btn-sm btn-link p-1 text-danger" onClick={() => handleDeleteAttachment(att.id)} title="Delete"><Trash2 size={13} /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            }
           </div>
         </div>
       )}

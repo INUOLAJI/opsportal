@@ -479,7 +479,10 @@ function SettingsPage() {
     }
     setPwSaving(true);
     try {
-      await authService.changePassword(pwForm.current, pwForm.next);
+      // Staff don't know their temp password, so we send an empty string
+      // for current_password — the backend skips the check for non-admins.
+      const current = isAdmin ? pwForm.current : '';
+      await authService.changePassword(current, pwForm.next);
       setPwForm({ current: '', next: '', confirm: '' });
       setPwSuccess(true);
       showToast('Password changed successfully!');
@@ -1621,18 +1624,20 @@ function SettingsPage() {
                           </div>
                           <form onSubmit={handleChangePassword}>
                             <div className="row g-3">
-                              <div className="col-12">
-                                <label className="form-label small fw-semibold mb-1" style={{ color: textSecondary }}>Current Password</label>
-                                <input
-                                  type="password"
-                                  className="form-control form-control-sm border shadow-none py-2 rounded-3"
-                                  style={{ backgroundColor: inputBg, color: textPrimary, borderColor }}
-                                  value={pwForm.current}
-                                  onChange={(e) => setPwForm(p => ({ ...p, current: e.target.value }))}
-                                  placeholder="Enter current password"
-                                  disabled={pwSaving}
-                                />
-                              </div>
+                              {isAdmin && (
+                                <div className="col-12">
+                                  <label className="form-label small fw-semibold mb-1" style={{ color: textSecondary }}>Current Password</label>
+                                  <input
+                                    type="password"
+                                    className="form-control form-control-sm border shadow-none py-2 rounded-3"
+                                    style={{ backgroundColor: inputBg, color: textPrimary, borderColor }}
+                                    value={pwForm.current}
+                                    onChange={(e) => setPwForm(p => ({ ...p, current: e.target.value }))}
+                                    placeholder="Enter current password"
+                                    disabled={pwSaving}
+                                  />
+                                </div>
+                              )}
                               <div className="col-12 col-sm-6">
                                 <label className="form-label small fw-semibold mb-1" style={{ color: textSecondary }}>New Password</label>
                                 <input
@@ -1665,7 +1670,7 @@ function SettingsPage() {
                                 type="submit"
                                 className="btn btn-sm text-white d-flex align-items-center gap-2 px-3 py-2 rounded-3"
                                 style={{ backgroundColor: '#3B82F6' }}
-                                disabled={pwSaving || !pwForm.current || !pwForm.next || !pwForm.confirm}
+                                disabled={pwSaving || !pwForm.next || !pwForm.confirm || (isAdmin && !pwForm.current)}
                               >
                                 {pwSaving && <Loader2 size={13} className="spin" />}
                                 {pwSaving ? 'Saving...' : 'Update Password'}
