@@ -223,7 +223,7 @@ function TaskPage() {
     if (!isAdmin) return;
     (async () => {
       try {
-        const data = await usersService.getAll();
+        const data = await usersService.getAll('staff');
         let allUsers = Array.isArray(data) ? data : (data?.results || []);
         
         // Filter users to strictly only show those from the same company
@@ -231,7 +231,7 @@ function TaskPage() {
         if (userCompanyId) {
           allUsers = allUsers.filter(u => (u.company_id === userCompanyId || u.company === userCompanyId));
         }
-        
+
         setUsers(allUsers);
       } catch (err) {
         // Non-fatal — the assignee dropdown just falls back to unassigned.

@@ -273,8 +273,11 @@ export const activityService = {
 
 // Users API Service
 export const usersService = {
-  getAll: async () => {
-    const res = await customFetch('/users/');
+  // Pass role='staff' (or 'admin') to filter server-side — e.g. the task
+  // assignee dropdown only wants staff, while the Team page wants everyone.
+  getAll: async (role) => {
+    const query = role ? `?role=${encodeURIComponent(role)}` : '';
+    const res = await customFetch(`/users/${query}`);
     if (!res.ok) throw new Error('Failed to fetch team users');
     return res.json();
   },
