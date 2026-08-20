@@ -27,8 +27,10 @@ function SignInPage() {
     setNeedsVerification(false);
     setResendState('idle');
 
-    // Backend determines user role from database
-    const result = await login(email, password, 'admin', rememberMe);
+    // Role is looked up from the account in the database and returned in
+    // the response — this shared sign-in page works for both admins and
+    // staff, so nothing role-specific is sent here.
+    const result = await login(email, password, null, rememberMe);
     if (result.success) {
       navigate(targetPath, { replace: true });
     } else {
