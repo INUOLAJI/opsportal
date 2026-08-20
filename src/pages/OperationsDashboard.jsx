@@ -60,6 +60,7 @@ function mapTask(t) {
     tag: t.tag || 'General',
     assignee: t.assignee,
     assigneeInitials: t.assignee_initials || (t.assignee_name ? t.assignee_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '—'),
+    assignees: t.assignees_detail || [],
     status: label,
     statusColor: color,
     rawStatus: t.status,
@@ -1040,6 +1041,7 @@ export default function OperationsDashboard() {
                       title={t.title}
                       tag={t.tag}
                       assignee={t.assigneeInitials}
+                      assignees={t.assignees}
                       status={t.status}
                       statusColor={t.statusColor}
                       borderLeftColor={t.statusColor}
@@ -1348,7 +1350,16 @@ export default function OperationsDashboard() {
               )}
             </div>
             <p className="small mb-3" style={{ color: textSecondary }}>
-              Assigned to <span className="fw-bold" style={{ color: textPrimary }}>{selectedTask.assigneeInitials}</span>
+              Assigned to{' '}
+              {selectedTask.assignees && selectedTask.assignees.length > 0
+                ? selectedTask.assignees.map((a, i) => (
+                    <span key={a.id}>
+                      <span className="fw-bold" style={{ color: textPrimary }}>{a.full_name}</span>
+                      {i < selectedTask.assignees.length - 1 ? ', ' : ''}
+                    </span>
+                  ))
+                : <span className="fw-bold" style={{ color: textPrimary }}>{selectedTask.assigneeInitials}</span>
+              }
               {selectedTask.dueDate && (
                 <>
                   {' · Due '}
@@ -1563,6 +1574,7 @@ function TaskRow({
   title,
   tag,
   assignee,
+  assignees,
   status,
   statusColor,
   borderLeftColor,
@@ -1629,18 +1641,27 @@ function TaskRow({
         >
           {status}
         </span>
-        <div
-          className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold shadow-sm text-nowrap"
-          style={{
-            width: '28px',
-            height: '28px',
-            fontSize: '10px',
-            backgroundColor: '#8B5CF6',
-            boxShadow: '0 2px 6px rgba(139, 92, 246, 0.3)',
-            flexShrink: 0
-          }}
-        >
-          {assignee}
+        <div className="d-flex">
+          {assignees && assignees.length > 0
+            ? assignees.slice(0, 3).map((a, i) => (
+                <div
+                  key={a.id}
+                  className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold"
+                  style={{
+                    width: '28px', height: '28px', fontSize: '10px',
+                    backgroundColor: colorForString(a.full_name),
+                    marginLeft: i > 0 ? '-6px' : 0,
+                    border: `2px solid ${cardBg}`,
+                    flexShrink: 0
+                  }}
+                  title={a.full_name}
+                >{a.initials}</div>
+              ))
+            : <div
+                className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold"
+                style={{ width: '28px', height: '28px', fontSize: '10px', backgroundColor: '#8B5CF6', flexShrink: 0 }}
+              >{assignee}</div>
+          }
         </div>
       </div>
     </div>
