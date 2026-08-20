@@ -135,7 +135,7 @@ function DocsPage() {
   const isAdmin = user?.role === 'admin';
   const [teamUsers, setTeamUsers] = useState([]);
   const [teamUsersLoading, setTeamUsersLoading] = useState(false);
-  const [uploadAssignee, setUploadAssignee] = useState('');
+  const [uploadAssigneeIds, setUploadAssigneeIds] = useState([]);
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploadCategory, setUploadCategory] = useState('');
   const [uploadFileObj, setUploadFileObj] = useState(null);
@@ -238,9 +238,15 @@ function DocsPage() {
     setUploadTitle('');
     setUploadCategory('');
     setUploadFileObj(null);
-    setUploadAssignee('');
+    setUploadAssigneeIds([]);
     setUploadError(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const toggleUploadAssignee = (id) => {
+    setUploadAssigneeIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
   };
 
   const handleUpload = async (e) => {
@@ -257,7 +263,11 @@ function DocsPage() {
       formData.append('title', uploadTitle.trim());
       formData.append('category', uploadCategory.trim());
       formData.append('file', uploadFileObj);
-      if (isAdmin && uploadAssignee) formData.append('assigned_to', uploadAssignee);
+      if (isAdmin && uploadAssigneeIds.length > 0) {
+        // Backend assigned_to is a single FK — assign to the first selected,
+        // or extend the backend later for multi-assign on documents.
+        formData.append('assigned_to', uploadAssigneeIds[0]);
+      }
       const created = await documentsService.create(formData);
       setDocuments(prev => [mapDocument(created), ...prev]);
       resetUploadForm();
@@ -669,25 +679,33 @@ function DocsPage() {
                   <label className="form-label small fw-semibold" style={{ color: textSecondary }}>
                     Assign to (optional)
                   </label>
-                  <select
-                    value={uploadAssignee}
-                    onChange={(e) => setUploadAssignee(e.target.value)}
-                    className="form-select"
-                    disabled={uploading || teamUsersLoading}
-                    style={{ backgroundColor: darkMode ? '#334155' : '#F8FAFC', color: textPrimary, border: `1px solid ${borderColor}` }}
+                  <div
+                    className="rounded-3 p-2"
+                    style={{ backgroundColor: darkMode ? '#334155' : '#F8FAFC', border: `1px solid ${borderColor}`, maxHeight: '120px', overflowY: 'auto' }}
                   >
-                    <option value="">
-                      {teamUsersLoading ? 'Loading team...' : 'No one — just visible to me'}
-                    </option>
+                    {teamUsersLoading && <p className="small mb-0" style={{ color: textSecondary }}>Loading team...</p>}
+                    {!teamUsersLoading && teamUsers.length === 0 && <p className="small mb-0" style={{ color: textSecondary }}>No team members found.</p>}
                     {teamUsers.map(u => (
-                      <option key={u.id} value={u.id}>
-                        {u.full_name || u.email} {u.role ? `(${u.role})` : ''}
-                      </option>
+                      <div key={u.id} className="form-check mb-1">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id={`doc-assignee-${u.id}`}
+                          checked={uploadAssigneeIds.includes(u.id)}
+                          onChange={() => toggleUploadAssignee(u.id)}
+                          disabled={uploading}
+                        />
+                        <label className="form-check-label small" style={{ color: textPrimary }} htmlFor={`doc-assignee-${u.id}`}>
+                          {u.full_name || u.email} {u.role ? `(${u.role})` : ''}
+                        </label>
+                      </div>
                     ))}
-                  </select>
-                  <p className="small mt-1 mb-0" style={{ color: textSecondary, fontSize: '11px' }}>
-                    Shares this document into that team member's Documents list.
-                  </p>
+                  </div>
+                  {uploadAssigneeIds.length > 0 && (
+                    <p className="small mt-1 mb-0" style={{ color: textSecondary, fontSize: '11px' }}>
+                      {uploadAssigneeIds.length} selected — shares into their Documents list.
+                    </p>
+                  )}
                 </div>
               )}
               <div className="mb-4">

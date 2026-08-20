@@ -6,7 +6,7 @@ import {
   Menu, Bell, Moon, Sun, ChevronDown, LogOut, Download
 } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
-import { tasksService, usersService, activityService, getWebSocketUrl } from '../services/api';
+import { tasksService, usersService, activityService, documentsService, getWebSocketUrl } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
@@ -152,6 +152,12 @@ function TaskPage() {
   const [uploadingFile, setUploadingFile] = useState(false);
   const [attachError, setAttachError] = useState(null);
   const attachInputRef = useRef(null);
+
+  // Vault documents for attaching to tasks (admin only)
+  const [vaultDocs, setVaultDocs] = useState([]);
+  const [vaultDocsLoaded, setVaultDocsLoaded] = useState(false);
+  const [attachDocIds, setAttachDocIds] = useState([]);
+  const [attachingDocs, setAttachingDocs] = useState(false);
 
   // Delete confirmation
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -349,7 +355,15 @@ function TaskPage() {
     setEditingTask(null);
     setForm({ title: '', tag: '', assigneeIds: [], priority: 'medium', dueDate: '', status: 'pending' });
     setFormError(null);
+    setAttachDocIds([]);
     setShowTicketModal(true);
+    if (isAdmin && !vaultDocsLoaded) {
+      documentsService.getAll().then(data => {
+        const list = Array.isArray(data) ? data : (data?.results || []);
+        setVaultDocs(list);
+        setVaultDocsLoaded(true);
+      }).catch(() => {});
+    }
   };
 
   const openEditModal = (task) => {
@@ -363,14 +377,23 @@ function TaskPage() {
       status: task.status,
     });
     setFormError(null);
+    setAttachDocIds([]);
     setShowTicketModal(true);
     setOpenMenuId(null);
+    if (isAdmin && !vaultDocsLoaded) {
+      documentsService.getAll().then(data => {
+        const list = Array.isArray(data) ? data : (data?.results || []);
+        setVaultDocs(list);
+        setVaultDocsLoaded(true);
+      }).catch(() => {});
+    }
   };
 
   const closeTicketModal = () => {
     if (submitting) return;
     setShowTicketModal(false);
     setEditingTask(null);
+    setAttachDocIds([]);
   };
 
   const handleSubmitTicket = async (e) => {
@@ -390,20 +413,45 @@ function TaskPage() {
       status: form.status,
     };
     try {
+      let savedTask;
       if (editingTask) {
-        const updated = await tasksService.update(editingTask.id, payload);
-        setTasks(prev => prev.map(t => (t.id === editingTask.id ? mapTask(updated) : t)));
+        savedTask = await tasksService.update(editingTask.id, payload);
+        setTasks(prev => prev.map(t => (t.id === editingTask.id ? mapTask(savedTask) : t)));
       } else {
-        const created = await tasksService.create(payload);
-        setTasks(prev => [mapTask(created), ...prev]);
+        savedTask = await tasksService.create(payload);
+        // WebSocket task_created event handles adding the task — avoids duplicate.
+      }
+      // Attach selected vault documents as task attachments
+      if (isAdmin && attachDocIds.length > 0) {
+        setAttachingDocs(true);
+        const selectedDocs = vaultDocs.filter(d => attachDocIds.includes(d.id));
+        for (const doc of selectedDocs) {
+          try {
+            const res = await fetch(doc.file);
+            const blob = await res.blob();
+            const filename = doc.title + '.' + (doc.file?.split('.').pop()?.split('?')[0] || 'pdf');
+            const file = new File([blob], filename, { type: blob.type });
+            const att = await tasksService.uploadAttachment(savedTask.id, file);
+            setTasks(prev => prev.map(t =>
+              t.id === savedTask.id ? { ...t, attachments: [...(t.attachments || []), att] } : t
+            ));
+          } catch (_) { /* non-fatal */ }
+        }
+        setAttachingDocs(false);
       }
       setShowTicketModal(false);
       setEditingTask(null);
+      setAttachDocIds([]);
     } catch (err) {
       setFormError(err.message || 'Could not save the task. Please try again.');
     } finally {
       setSubmitting(false);
+      setAttachingDocs(false);
     }
+  };
+
+  const toggleAttachDoc = (id) => {
+    setAttachDocIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
   const toggleAssignee = (id) => {
@@ -1108,12 +1156,41 @@ function TaskPage() {
                 </div>
               )}
 
+              {isAdmin && vaultDocs.length > 0 && (
+                <div className="mb-3">
+                  <label className="form-label small fw-semibold" style={{ color: textSecondary }}>Attach documents from vault (optional)</label>
+                  <div
+                    className="rounded-3 p-2"
+                    style={{ backgroundColor: inputBg, border: `1px solid ${borderColor}`, maxHeight: '120px', overflowY: 'auto' }}
+                  >
+                    {vaultDocs.map(d => (
+                      <div key={d.id} className="form-check mb-1">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id={`vault-doc-${d.id}`}
+                          checked={attachDocIds.includes(d.id)}
+                          onChange={() => toggleAttachDoc(d.id)}
+                        />
+                        <label className="form-check-label small text-truncate d-block" style={{ color: textPrimary }} htmlFor={`vault-doc-${d.id}`}>
+                          {d.title}
+                          {d.category ? <span style={{ color: textSecondary }}> · {d.category}</span> : ''}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  {attachDocIds.length > 0 && (
+                    <p className="small mt-1 mb-0" style={{ color: textSecondary }}>{attachDocIds.length} document{attachDocIds.length > 1 ? 's' : ''} will be attached</p>
+                  )}
+                </div>
+              )}
+
               {formError && <div className="alert alert-danger py-2 px-3 small">{formError}</div>}
 
               <div className="d-flex justify-content-end gap-2 mt-4">
                 <button type="button" className="btn border" style={{ color: textPrimary, borderColor: borderColor, backgroundColor: cardBg }} onClick={closeTicketModal} disabled={submitting}>Cancel</button>
-                <button type="submit" className="btn text-white" style={{ backgroundColor: '#3B82F6' }} disabled={submitting}>
-                  {submitting ? 'Saving…' : (editingTask ? 'Save changes' : 'Create ticket')}
+                <button type="submit" className="btn text-white" style={{ backgroundColor: '#3B82F6' }} disabled={submitting || attachingDocs}>
+                  {(submitting || attachingDocs) ? 'Saving…' : (editingTask ? 'Save changes' : 'Create ticket')}
                 </button>
               </div>
             </form>
