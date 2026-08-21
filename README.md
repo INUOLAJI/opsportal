@@ -1,106 +1,204 @@
 # OpsPortal — Frontend
 
-React + Vite client for OpsPortal, an internal ops/client portal with
-role-based (staff/admin) task management, document storage, bookings,
-invoicing, analytics, and live updates over WebSockets.
+A responsive React SPA for the OpsPortal operations management platform. Supports admin and staff roles with real-time task updates, document vault, team management, analytics, and full authentication flows.
 
-## Stack
+---
 
-- React 19 + Vite
-- React Router v6
-- Bootstrap 5 (utility classes + custom inline styling, no Bootstrap JS)
-- Recharts (Analytics page charts)
-- lucide-react (icons)
+## Live App
 
-## Project layout
+**URL:** `https://opsportal-ten.vercel.app`
 
-```
-src/
-  pages/
-    OperationsDashboard.jsx   # KPIs, task queue, activity feed, real-time WS
-    TaskPage.jsx               # Kanban board: create/edit/delete, priority, request-completion
-    DocsPage.jsx                # document upload/browse (Cloudinary-backed)
-    AnalyticsPage.jsx           # usage metrics, trend chart, CSV export
-    SettingsPage.jsx            # platform settings (admin-editable, read-only for staff)
-    TeamPage.jsx
-    SignInPage.jsx / SignUpPage.jsx
-  components/
-    Sidebar.jsx                 # nav + dark mode toggle, collapsible
-    ProtectedRoute.jsx          # redirects unauthenticated users to /signin
-    GuestRoute.jsx               # redirects authenticated users away from sign-in/up
-  context/
-    AuthContext.jsx              # current user, sign in/out, token state
-  services/
-    api.js                       # all backend calls — see below
-```
+---
 
-## API layer (`src/services/api.js`)
+## Tech Stack
 
-Every backend call goes through `customFetch`, which:
-- attaches the JWT access token from `localStorage`/`sessionStorage`
-- on a 401, silently refreshes the token once and retries; if refresh fails,
-  clears tokens and redirects to `/signin`
+| Layer | Technology |
+|---|---|
+| Framework | React 19 (Vite) |
+| Routing | React Router DOM v7 |
+| UI / Styling | Bootstrap 5, inline styles |
+| Icons | Lucide React |
+| Charts | Recharts |
+| Real-time | Native WebSocket API |
+| HTTP | Native `fetch` with JWT refresh interceptor |
+| Hosting | Vercel |
 
-Exported services: `authService`, `tasksService`, `documentsService`,
-`activityService`, `usersService`, `settingsService`. Each method throws an
-`Error` with a message from the API's `detail` field on failure — pages catch
-these and show them inline rather than letting them bubble to a blank screen.
+---
 
-`getWebSocketUrl()` builds the WebSocket URL (token passed as a query param,
-since browsers can't set custom headers on a WS handshake) — used by
-`OperationsDashboard` and `TaskPage` for real-time task/activity updates.
+## Features
 
-## Role-based UI
+- JWT authentication with auto token refresh and persistent sessions
+- Admin and staff role-based UI — different views, actions, and permissions per role
+- Staff invite flow — email verification → profile completion form (name, email, password) → dashboard
+- Forgot password → email link → reset password form
+- Real-time task and activity updates via WebSocket (no page refresh needed)
+- Kanban-style task board with multi-assignee support and stacked avatars
+- Task attachments — upload files directly or attach existing vault documents
+- Document vault with category filtering and per-staff assignment
+- Team management — invite staff, view members, remove accounts
+- Analytics page with charts and metrics
+- Platform settings (admin only) — workspace config, environment stage, secret key rotation
+- Dark mode across all pages
+- Fully responsive — mobile, tablet, and desktop
 
-`AuthContext`'s `user.role` (`staff` or `admin`) drives what's editable, not
-just what's visible — the backend enforces the same rules server-side, so a
-staff user hitting a disabled control isn't a security boundary, it's just
-UX:
-- Staff see only tasks/documents assigned to or created by them.
-- Only admins can create/edit/delete tasks, and only admins can save changes
-  on the Settings page (staff get a read-only view with a banner).
-- Staff flag a task done via "Request completion"; only an admin can mark it
-  actually complete.
-- One shared `SignInPage` handles both admins and staff — it no longer sends
-  a hardcoded `role` to the backend; the account's real role comes back from
-  the database in the sign-in response.
-- Staff accounts created by an admin must click an emailed verification
-  link before they can sign in (`code: "email_not_verified"` from the
-  backend triggers a "resend verification" prompt on the sign-in page).
-- The task assignee dropdown (`TaskPage.jsx`) only lists staff — it calls
-  `usersService.getAll('staff')`, which the backend filters server-side via
-  `?role=staff` so admins never show up as assignable.
+---
 
-## Environment variables
-
-| Variable | Default | Notes |
-|---|---|---|
-| `VITE_API_BASE_URL` | `https://opsportal-backend-n1jf.onrender.com/api` | REST API base; the WS URL is derived from this (swaps `http`→`ws`, strips `/api`) |
-
-Create a `.env` (or `.env.local`) in the project root:
+## Project Structure
 
 ```
-VITE_API_BASE_URL=https://opsportal-backend-n1jf.onrender.com/api
+frontend/
+├── public/
+│   └── favicon.svg
+└── src/
+    ├── components/
+    │   ├── Sidebar.jsx           # Collapsible nav sidebar (all pages)
+    │   ├── ProtectedRoute.jsx    # Redirects unauthenticated users to /signin
+    │   └── GuestRoute.jsx        # Redirects authenticated users away from auth pages
+    ├── context/
+    │   └── AuthContext.jsx       # Auth state, login, logout, loginWithTokens
+    ├── pages/
+    │   ├── SignInPage.jsx         # Email + password sign in
+    │   ├── SignUpPage.jsx         # Admin company registration
+    │   ├── VerifyEmailPage.jsx    # Email verification + staff profile completion form
+    │   ├── ForgotPasswordPage.jsx # Request password reset email
+    │   ├── ResetPasswordPage.jsx  # Set new password via reset link
+    │   ├── OperationsDashboard.jsx # KPI cards, high priority queue, activity feed
+    │   ├── TaskPage.jsx           # Kanban board, create/edit tasks, attachments
+    │   ├── DocsPage.jsx           # Document vault, upload, assign to staff
+    │   ├── TeamPage.jsx           # Team members list, invite staff, remove members
+    │   ├── AnalyticsPage.jsx      # Charts and performance metrics
+    │   └── SettingsPage.jsx       # Platform settings, change password
+    └── services/
+        └── api.js                 # All API calls, token management, WebSocket URL
 ```
 
-## Local setup
+---
+
+## Routes
+
+| Path | Component | Protected | Description |
+|------|-----------|-----------|-------------|
+| `/` | `SignInPage` | No | Redirects to sign in |
+| `/signin` | `SignInPage` | No | Sign in form |
+| `/signup` | `SignUpPage` | No | Admin company registration |
+| `/verify-email` | `VerifyEmailPage` | No | Email verification + profile setup |
+| `/forgot-password` | `ForgotPasswordPage` | No | Request password reset |
+| `/reset-password` | `ResetPasswordPage` | No | Set new password via link |
+| `/dashboard` | `OperationsDashboard` | Yes | Main dashboard |
+| `/task` | `TaskPage` | Yes | Task board |
+| `/documents` | `DocsPage` | Yes | Document vault |
+| `/team` | `TeamPage` | Yes | Team management |
+| `/analytics` | `AnalyticsPage` | Yes | Analytics |
+| `/settings` | `SettingsPage` | Yes | Settings |
+
+---
+
+## Auth Flow
+
+### Admin registration
+`/signup` → fills company details → account created → sign in at `/signin`
+
+### Staff invite
+Admin invites staff from Team page → Brevo sends email with verification link → staff clicks link → `/verify-email` verifies token → **profile completion form** (full name, email, new password, confirm password) → on submit → auto-logged in → `/dashboard`
+
+### Forgot password
+`/signin` → "Forgot password?" → `/forgot-password` → enter email → reset link sent → click link in email → `/reset-password` → enter new password + confirm → success → redirect to `/signin`
+
+---
+
+## API Service (`src/services/api.js`)
+
+All backend communication goes through `api.js`. It handles:
+
+- **Token management** — reads/writes `accessToken` and `refreshToken` from `localStorage` / `sessionStorage`
+- **Auto refresh** — on 401 response, automatically refreshes the access token and retries the request
+- **WebSocket URL** — builds the WS URL with the access token as a query param
+
+### Services exported
+
+| Export | Methods |
+|--------|---------|
+| `authService` | `signIn`, `signUp`, `verifyEmail`, `resendVerification`, `forgotPassword`, `resetPassword`, `completeProfile`, `changePassword` |
+| `tasksService` | `getAll`, `create`, `update`, `delete`, `requestCompletion`, `uploadAttachment`, `deleteAttachment` |
+| `documentsService` | `getAll`, `create`, `delete` |
+| `activityService` | `getAll`, `markAllRead` |
+| `usersService` | `getAll`, `remove` |
+| `settingsService` | `get`, `update`, `rotateSecret` |
+| `getWebSocketUrl` | Returns `wss://...?token=<access_token>` |
+
+---
+
+## Real-time Updates
+
+The dashboard and task board maintain a persistent WebSocket connection to the backend. Events received:
+
+| Event | Effect |
+|-------|--------|
+| `task_created` | Adds new task to board (deduped by id) |
+| `task_updated` | Updates existing task in place |
+| `activity_created` | Prepends new activity to the feed |
+
+The connection auto-reconnects every 3 seconds if dropped.
+
+---
+
+## Local Setup
+
+### Prerequisites
+- Node.js 18+
+
+### Installation
 
 ```bash
+git clone <repo-url>
+cd frontend
+
 npm install
-npm run dev        # http://localhost:5173
 ```
+
+### Environment Variables
+
+Create a `.env` file in `frontend/`:
+
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8000/api
+```
+
+If `VITE_API_BASE_URL` is not set, it defaults to the production Render URL.
+
+### Run
 
 ```bash
-npm run build       # production build to dist/
-npm run lint         # eslint
-npm run preview       # serve the production build locally
+npm run dev
 ```
 
-## Notes for future work
+App runs at `http://localhost:5173`
 
-- `npm run build` currently warns about a >500kB main chunk — worth revisiting
-  with route-based `import()` code-splitting if load time becomes a concern.
-- Several pages (`OperationsDashboard`, `TaskPage`) each maintain their own
-  WebSocket connection independently; if more pages need real-time data,
-  consider lifting the connection into a shared context instead of
-  duplicating the connect/reconnect logic per page.
+### Build
+
+```bash
+npm run build
+```
+
+---
+
+## Deployment (Vercel)
+
+- Framework preset: Vite
+- Build command: `npm run build`
+- Output directory: `dist`
+- `vercel.json` rewrites all routes to `index.html` for client-side routing:
+
+```json
+{
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}
+```
+
+Set `VITE_API_BASE_URL` in Vercel environment variables to point to the production backend.
+
+---
+
+## License
+
+MIT
