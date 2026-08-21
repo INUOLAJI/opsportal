@@ -198,6 +198,25 @@ export const authService = {
     }
     return data;
   },
+
+  completeProfile: async (payload) => {
+    const token = getAccessToken();
+    const response = await fetch(`${API_BASE_URL}/auth/complete-profile/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const error = new Error(data.detail || 'Could not complete profile');
+      error.response = { data, status: response.status };
+      throw error;
+    }
+    return data;
+  },
 };
 
 // Tasks API Service
