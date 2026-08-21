@@ -197,6 +197,9 @@ function SignInPage() {
                     Keep me authenticated
                   </label>
                 </div>
+                <Link to="/forgot-password" className="small text-decoration-none text-primary-link">
+                  Forgot password?
+                </Link>
               </div>
 
               <button

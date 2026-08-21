@@ -4,6 +4,8 @@ import OperationsDashboard from './pages/OperationsDashboard';
 import SignInPage from './pages/SignInPage';
 import SignUpPage from './pages/SignUpPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import TaskPage from './pages/TaskPage';
 import TeamPage from './pages/TeamPage';
 import AnalyticsPage from './pages/AnalyticsPage';
@@ -52,6 +54,8 @@ function AppRoutes() {
       <Route path='/signin' element={<SignInPage />} />
       <Route path='/signup' element={<SignUpPage />} />
       <Route path='/verify-email' element={<VerifyEmailPage />} />
+      <Route path='/forgot-password' element={<ForgotPasswordPage />} />
+      <Route path='/reset-password' element={<ResetPasswordPage />} />
 
       {/* Protected Dashboard Routes */}
       <Route 

@@ -199,6 +199,36 @@ export const authService = {
     return data;
   },
 
+  forgotPassword: async (email) => {
+    const response = await fetch(`${API_BASE_URL}/auth/forgot-password/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const error = new Error(data.detail || 'Could not send reset email');
+      error.response = { data, status: response.status };
+      throw error;
+    }
+    return data;
+  },
+
+  resetPassword: async (uid, token, new_password, confirm_password) => {
+    const response = await fetch(`${API_BASE_URL}/auth/reset-password/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid, token, new_password, confirm_password }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const error = new Error(data.detail || 'Could not reset password');
+      error.response = { data, status: response.status };
+      throw error;
+    }
+    return data;
+  },
+
   completeProfile: async (payload) => {
     const token = getAccessToken();
     const response = await fetch(`${API_BASE_URL}/auth/complete-profile/`, {
